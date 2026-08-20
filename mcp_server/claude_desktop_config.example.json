@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Copy the 'weather-warehouse' block into your real config at:",
+    "  ~/Library/Application Support/Claude/claude_desktop_config.json",
+    "If that file already has an mcpServers object, add this entry to it rather",
+    "than replacing the file. Restart Claude Desktop afterwards — it only reads",
+    "this file at launch.",
+    "",
+    "The command MUST be the absolute path to the venv python. Claude Desktop",
+    "does not inherit your shell PATH, so a bare 'python' will not resolve.",
+    "",
+    "No password appears here: the server reads mcp_server/.env, which is mode",
+    "600 and gitignored. Keeping it out of this file means the config is safe to",
+    "copy around and the credential lives in exactly one place."
+  ],
+  "mcpServers": {
+    "weather-warehouse": {
+      "command": "/Users/dustincremascoli/projects/ec2-nginx/weather-sql-explorer/mcp_server/.venv/bin/python",
+      "args": ["-m", "weather_mcp.server"],
+      "cwd": "/Users/dustincremascoli/projects/ec2-nginx/weather-sql-explorer/mcp_server"
+    }
+  }
+}

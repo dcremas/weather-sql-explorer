@@ -1,0 +1,89 @@
+# The Streamlit text-to-SQL app.
+#
+# Install to /etc/systemd/system/sql-explorer.service.
+
+[Unit]
+Description=Weather Warehouse SQL Explorer (Streamlit + LangChain + Gemini)
+Documentation=file:///opt/sql-explorer/README.md
+After=network-online.target weather-mcp.service
+Wants=network-online.target
+# Wants, not Requires: if the MCP server is down the app should still start and
+# say so on the page. Requires would take the site off the air entirely, turning
+# a degraded demo into a 502.
+Wants=weather-mcp.service
+
+# See the note in weather-mcp.service — these must be in [Unit].
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=sqlxapp
+Group=sqlxapp
+WorkingDirectory=/opt/sql-explorer
+
+Environment=SQLX_MCP_URL=http://127.0.0.1:8770/mcp
+Environment=SQLX_MODEL=gemini-3.7-flash
+Environment=SQLX_PORT=8503
+# The daily token ledger. Must be on disk and writable by this user: it is what
+# survives a restart, and Streamlit restarts often. StateDirectory below creates
+# it with the right ownership.
+Environment=SQLX_STATE_PATH=/var/lib/sql-explorer/budget.json
+Environment=PYTHONUNBUFFERED=1
+
+# HOME MUST BE SET, AND IT MUST NOT BE UNDER /home.
+#
+# Streamlit probes `$HOME/.streamlit/secrets.toml` during startup, before it
+# serves anything. The service user is created --no-create-home, so $HOME
+# defaults to /home/sqlxapp -- and ProtectHome=true below makes all of /home
+# inaccessible to this unit. The probe therefore fails with
+#
+#   PermissionError: [Errno 13] Permission denied: '/home/sqlxapp/.streamlit/secrets.toml'
+#
+# and NOT with FileNotFoundError, which Streamlit handles fine. So the service
+# crash-looped until it hit StartLimitBurst and gave up. Pointing HOME at the
+# StateDirectory gives Streamlit a real directory it owns; the secrets file
+# still does not exist there, but "absent" is a case it copes with.
+#
+# (weather-mcp.service needs none of this -- it never looks at HOME.)
+Environment=HOME=/var/lib/sql-explorer
+
+# Holds only GOOGLE_API_KEY. Mode 640 root:sqlxapp. This user deliberately
+# cannot read /etc/weather-mcp/mcp.env — see that unit's header.
+EnvironmentFile=/etc/sql-explorer/app.env
+
+# --server.address=127.0.0.1 IS LOAD-BEARING. Streamlit otherwise binds 0.0.0.0,
+# which publishes 8503 on the public EIP — past nginx, past its rate limits, and
+# past every security header. provision.sh asserts that it is not listening on
+# anything but loopback after start.
+ExecStart=/opt/sql-explorer/.venv/bin/streamlit run app.py \
+    --server.address=127.0.0.1 \
+    --server.port=8503 \
+    --server.headless=true \
+    --server.enableCORS=false \
+    --server.enableXsrfProtection=true \
+    --browser.gatherUsageStats=false
+
+Restart=always
+RestartSec=5s
+
+# 214 MB measured after serving several questions (pandas 3 + plotly + langchain
+# is heavier than the weblog dashboard's 59-63 MB). Capped so a pathological
+# result set cannot take the box down with it.
+MemoryHigh=360M
+MemoryMax=480M
+
+StateDirectory=sql-explorer
+StateDirectoryMode=0750
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

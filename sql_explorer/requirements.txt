@@ -1,0 +1,18 @@
+streamlit>=1.60
+langchain>=1.0
+langchain-google-genai>=4.0
+langchain-mcp-adapters>=0.3
+pandas>=2.2
+plotly>=6.0
+
+# PINNED BELOW 2 ON PURPOSE — DO NOT UPGRADE.
+#
+# langchain-mcp-adapters 0.3.1 imports `RequestContext` from `mcp.shared.context`,
+# which the mcp 2.x SDK moved. Upgrading breaks tool discovery at import time with:
+#   ImportError: cannot import name 'RequestContext' from 'mcp.shared.context'
+#
+# The MCP SERVER (../mcp_server) runs mcp>=2 in its own venv. That is fine and
+# intended: these are two processes sharing a wire protocol, not a library. A
+# v1.29 client against a v2.0 server is verified working — 13 tools discovered,
+# run_sql executed, 2026-08-20.
+mcp<2

@@ -1,0 +1,18 @@
+# Secrets — never commit. Each component has its own .env.example instead.
+.env
+*.env
+!*.env.example
+
+# Virtualenvs (~600 MB combined)
+.venv/
+
+# Runtime state
+.budget.json
+budget.json
+
+# Python
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store

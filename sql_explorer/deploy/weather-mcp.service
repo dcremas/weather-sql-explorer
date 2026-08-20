@@ -1,0 +1,69 @@
+# The MCP server, as an HTTP service on the loopback.
+#
+# Install to /etc/systemd/system/weather-mcp.service.
+#
+# RUNS AS ITS OWN USER, SEPARATE FROM THE WEB APP, AND THAT IS THE POINT.
+# `weathermcp` owns the Postgres credential; `sqlxapp` (sql-explorer.service)
+# owns the Google API key. Neither can read the other's environment file. So the
+# public-facing Streamlit process — the one an attacker would reach first — has
+# no way to obtain the database password even if it is fully compromised. One
+# shared user would throw that away for nothing.
+
+[Unit]
+Description=Weather warehouse MCP server (read-only SQL tools over HTTP)
+Documentation=file:///opt/weather-mcp/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+# StartLimit* BELONG IN [Unit], NOT [Service]. Put in [Service] and systemd logs
+# "Unknown key name ... ignoring" and silently applies its default of 5 starts
+# per 10s — so Restart=always quietly is not always. weblog-collector.service on
+# this box has exactly that bug; do not copy it.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=weathermcp
+Group=weathermcp
+WorkingDirectory=/opt/weather-mcp
+
+# On the box Postgres is LOCAL, so there is no SSH tunnel and the port is 5432,
+# not the 15432 the laptop uses. Setting these as environment variables rather
+# than editing .env keeps one checked-out tree working in both places.
+Environment=MCP_DB_HOST=127.0.0.1
+Environment=MCP_DB_PORT=5432
+Environment=MCP_DB_USER=mcp_ro
+Environment=MCP_HTTP_HOST=127.0.0.1
+Environment=MCP_HTTP_PORT=8770
+Environment=PYTHONUNBUFFERED=1
+
+# Holds only MCP_DB_PASSWORD. Mode 640 root:weathermcp.
+EnvironmentFile=/etc/weather-mcp/mcp.env
+
+ExecStart=/opt/weather-mcp/.venv/bin/python -m weather_mcp.server --http
+
+Restart=always
+RestartSec=5s
+
+# 83 MB measured serving real queries on the laptop. The ceiling is here so a
+# runaway result set kills THIS service rather than letting the kernel's OOM
+# killer choose — on a 3.8 GB box already ~800 MB into swap, its choice would
+# probably be the website.
+MemoryHigh=160M
+MemoryMax=240M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# Loopback only. It never makes an outbound connection to anything but Postgres.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
