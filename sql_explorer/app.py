@@ -47,6 +47,13 @@ st.set_page_config(
     layout="wide",
 )
 
+# This is a public demo linked from a portfolio, so it has to answer two
+# questions a visitor will have within seconds of arriving: where is the code,
+# and who made it. Both are rendered as one caption line under the intro rather
+# than as buttons -- the question box should stay the loudest thing on the page.
+REPO_URL = "https://github.com/dcremas/weather-sql-explorer"
+SITE_URL = "https://www.dustincremascoli.com"
+
 EXAMPLES = [
     "Which 5 stations are forecast furthest above their own August average temperature?",
     "What were the 10 hottest hours ever recorded, and where?",
@@ -183,6 +190,11 @@ def main() -> None:
         "Ask a question in plain English. It is turned into PostgreSQL, run "
         "against a **9.2 million row** weather warehouse, and the query is shown "
         "alongside the answer so you can check the work."
+    )
+    st.caption(
+        f"[Source on GitHub]({REPO_URL}) — the web app and the MCP server that "
+        f"executes its SQL &nbsp;·&nbsp; built by "
+        f"[dustincremascoli.com]({SITE_URL})"
     )
 
     with st.expander("How this works"):
