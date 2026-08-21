@@ -244,27 +244,77 @@ curl -fsS http://127.0.0.1:8503/_stcore/health >/dev/null && echo "   streamlit 
 
 # End-to-end through the MCP protocol, not just a port check: a listening socket
 # with a broken database credential looks identical from the outside.
-if sudo -u weathermcp /opt/weather-mcp/.venv/bin/python -m weather_mcp.selftest 2>&1 | tail -3 | grep -q "checks passed"; then
-    sudo -u weathermcp /opt/weather-mcp/.venv/bin/python -m weather_mcp.selftest 2>&1 | tail -2 | sed 's/^/   /'
+#
+# THE ENVIRONMENT IS LOAD-BEARING AND WAS MISSING. The connection settings live
+# as `Environment=` lines in weather-mcp.service; /etc/weather-mcp/mcp.env holds
+# only the password. Invoked without the unit's environment, db.py falls back to
+# its development default of port 15432 -- the laptop's SSH tunnel -- so every
+# check failed with "connection refused" on a box whose database was perfectly
+# healthy, and the deploy reported a scary false negative every single time.
+# The values are read back off the unit so there is one source of truth.
+#
+# Also: run the suite ONCE. This is 61 live database checks, and the previous
+# version ran the whole thing twice -- once to test, once to print a summary it
+# had already computed.
+#
+# `env $MCP_UNIT_ENV` is deliberately unquoted: systemctl returns space-separated
+# KEY=VALUE pairs and they must word-split into separate arguments.
+MCP_UNIT_ENV=$(systemctl show weather-mcp -p Environment --value)
+SELFTEST_CMD="sudo -u weathermcp env \$(systemctl show weather-mcp -p Environment --value) \\
+     bash -c 'set -a; . /etc/weather-mcp/mcp.env; set +a
+       cd /opt/weather-mcp && ./.venv/bin/python -m weather_mcp.selftest'"
+# shellcheck disable=SC2086
+SELFTEST=$(sudo -u weathermcp env $MCP_UNIT_ENV bash -c \
+    'set -a; . /etc/weather-mcp/mcp.env; set +a
+     cd /opt/weather-mcp && ./.venv/bin/python -m weather_mcp.selftest' 2>&1 || true)
+
+if grep -q "checks passed" <<<"$SELFTEST"; then
+    tail -2 <<<"$SELFTEST" | sed 's/^/   /'
+    # A summary line is printed even when individual checks failed, so say so
+    # rather than letting "checks passed" read as all-clear.
+    if grep -q "FAIL" <<<"$SELFTEST"; then
+        echo "   ^ some checks FAILED. To see which:"
+        echo "     $SELFTEST_CMD"
+    fi
 else
-    echo "   selftest DID NOT PASS — check /etc/weather-mcp/mcp.env, then:"
-    echo "     sudo -u weathermcp /opt/weather-mcp/.venv/bin/python -m weather_mcp.selftest"
+    echo "   selftest produced no summary — the suite could not run. Try:"
+    echo "     $SELFTEST_CMD"
 fi
 
 log "Done"
-cat <<NOTES
-Both services are running and reachable on the loopback. Still to do, in order:
 
-  1. Fill in the two credential files if provision.sh created them empty:
+# The remaining-steps list is CONDITIONAL. It used to print unconditionally, so
+# every routine redeploy of an already-live site ended with "Nothing is publicly
+# reachable until step 2 completes" and a list of first-install chores that were
+# done months ago -- which reads as a failed deploy. Each step is now tested for.
+REMAINING=0
+note() { REMAINING=$((REMAINING + 1)); echo "  ${REMAINING}. $1"; }
+
+echo "Both services are running and reachable on the loopback."
+echo
+
+if ! grep -q '[^[:space:]]' <<<"$(sed -n 's/^MCP_DB_PASSWORD=//p' /etc/weather-mcp/mcp.env)" \
+   || ! grep -q '[^[:space:]]' <<<"$(sed -n 's/^GOOGLE_API_KEY=//p' /etc/sql-explorer/app.env)"; then
+    note "Fill in the empty credential field(s):
        /etc/weather-mcp/mcp.env     MCP_DB_PASSWORD
        /etc/sql-explorer/app.env    GOOGLE_API_KEY
-     then: systemctl restart weather-mcp sql-explorer
+     then: systemctl restart weather-mcp sql-explorer"
+fi
 
-  2. Add the DNS A record at GoDaddy (manual — no Route53 zone, no API creds):
+if ! getent hosts "${HOSTNAME_APP}" >/dev/null 2>&1; then
+    note "Add the DNS A record at GoDaddy (manual — no Route53 zone, no API creds):
        ${HOSTNAME_APP}  A  <EC2_PUBLIC_IP>
-     Confirm with: dig +short ${HOSTNAME_APP}
+     Confirm with: dig +short ${HOSTNAME_APP}"
+fi
 
-  3. Once it resolves:  sudo bash ${SRC}/enable-tls.sh
+if [[ ! -d "/etc/letsencrypt/live/${HOSTNAME_APP}" ]]; then
+    note "Issue the certificate: sudo bash ${SRC}/enable-tls.sh"
+fi
 
-Nothing is publicly reachable until step 2 completes.
-NOTES
+if (( REMAINING == 0 )); then
+    echo "Nothing outstanding: DNS resolves, the certificate is installed, and"
+    echo "https://${HOSTNAME_APP}/ is serving this build."
+else
+    echo
+    echo "Until the above is done, the site is not fully reachable."
+fi

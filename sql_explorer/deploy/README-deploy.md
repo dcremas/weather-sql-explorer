@@ -1,8 +1,9 @@
 # Deploying the SQL Explorer to lambda-playground-1
 
 Two systemd services behind an nginx vhost, on the box that already runs four
-sites plus the analytics dashboard. Deployed **2026-08-20**; every command below
-was run and verified that day.
+sites plus the analytics dashboard. First deployed **2026-08-20**; last
+redeployed **2026-08-21** (the explainer and schema tabs). Every command below
+has been run and verified on the box.
 
 ```
 nginx :443  sql.dustincremascoli.com
@@ -17,47 +18,41 @@ nginx :443  sql.dustincremascoli.com
 |---|---|
 | `weather-mcp.service` | **running**, loopback 8770 |
 | `sql-explorer.service` | **running**, loopback 8503 |
-| nginx vhost | **installed, HTTP only** |
+| nginx vhost | **installed, TLS** (`sqlx.conf`) |
 | weblog map entry | **added** (`sql.dustincremascoli.com → sqlx`) |
-| DNS A record | **NOT DONE — manual, blocks everything below** |
-| TLS certificate | not issued (needs DNS) |
-| Public reachability | **none yet** |
+| DNS A record | **done** — resolves to the EIP |
+| TLS certificate | **issued**, Let's Encrypt, renews by certbot timer |
+| Public reachability | **live** at https://sql.dustincremascoli.com |
 
-Verified working on the box: 13 MCP tools discovered over HTTP, a 9,170,699-row
-count, a cross-database FDW query, a rejected `DELETE`, and a full Gemini answer
-in 17,394 tokens. All five existing sites re-checked before and after.
+Verified on the box: 13 MCP tools discovered over HTTP, a 9.18M-row count, a
+cross-database FDW query, a rejected `DELETE`, and full Gemini answers. The
+2026-08-21 redeploy additionally checked the three-tab page over HTTPS and the
+live schema page against the box's own Postgres. All five existing sites
+re-checked before and after.
 
-## Remaining steps, in order
-
-**1. DNS (manual — this is the gate).** DNS is at GoDaddy: no Route53 zone, no
-API credentials on the Mac, so this cannot be scripted.
-
-```
-sql.dustincremascoli.com   A   <EC2_PUBLIC_IP>
-dig +short sql.dustincremascoli.com     # confirm before step 2
-```
-
-**2. TLS.**
-
-```bash
-sudo bash /tmp/sqlx-deploy/sql_explorer/deploy/enable-tls.sh
-```
-
-Issues the certificate by webroot and swaps `sqlx-http.conf` for `sqlx.conf`.
-Self-reverting: if the TLS vhost fails `nginx -t` the previous file is restored
-and nginx is never reloaded broken — a bad vhost takes down **all five** sites,
-not just this one.
-
-**3. The banner link** on the main site, once the URL is live.
+`enable-tls.sh` is kept for a rebuild. It issues the certificate by webroot and
+swaps `sqlx-http.conf` for `sqlx.conf`, and it is self-reverting: if the TLS
+vhost fails `nginx -t` the previous file is restored and nginx is never reloaded
+broken — a bad vhost takes down **all five** sites, not just this one. DNS is at
+GoDaddy (no Route53 zone, no API credentials on the Mac), so an A record change
+cannot be scripted and stays manual.
 
 ## Deploying a change
 
 ```bash
-cd ~/projects/WeatherData
-rsync -az --exclude '.venv/' --exclude '__pycache__/' --exclude '.env' \
+cd ~/projects/ec2-nginx/weather-sql-explorer
+rsync -az --delete --exclude '.venv/' --exclude '__pycache__/' --exclude '.env' \
       --exclude '.budget.json' --exclude '.git/' \
-      mcp_server sql_explorer ec2-user@<EC2_PUBLIC_IP>:/tmp/sqlx-deploy/
-ssh ec2-user@<EC2_PUBLIC_IP> 'sudo bash /tmp/sqlx-deploy/sql_explorer/deploy/provision.sh'
+      mcp_server sql_explorer awsvm:/tmp/sqlx-deploy/
+ssh awsvm 'sudo bash /tmp/sqlx-deploy/sql_explorer/deploy/provision.sh'
+```
+
+`awsvm` is the ~/.ssh/config alias for the box. Worth pre-flighting the new code
+against the box's interpreter before restarting a live service — a syntax error
+otherwise surfaces as a crash-loop on a public page:
+
+```bash
+ssh awsvm 'cd /tmp/sqlx-deploy/sql_explorer && /usr/bin/python3.11 -m py_compile *.py'
 ```
 
 `provision.sh` is idempotent. It refreshes code, rebuilds venvs if the
@@ -153,8 +148,14 @@ journalctl -u sql-explorer -f
 journalctl -u weather-mcp -n 50
 
 # Is the data path healthy? (runs 61 live checks)
-sudo -u weathermcp bash -c 'set -a; . /etc/weather-mcp/mcp.env; set +a
-  cd /opt/weather-mcp && ./.venv/bin/python -m weather_mcp.selftest'
+# The `env $(systemctl show ...)` part is REQUIRED, not decoration: the database
+# host and port live as Environment= lines in weather-mcp.service, while mcp.env
+# holds only the password. Without them db.py falls back to its development
+# default of port 15432 — the laptop's SSH tunnel — and every check fails with
+# "connection refused" on a box where the database is fine.
+sudo -u weathermcp env $(systemctl show weather-mcp -p Environment --value) \
+  bash -c 'set -a; . /etc/weather-mcp/mcp.env; set +a
+    cd /opt/weather-mcp && ./.venv/bin/python -m weather_mcp.selftest'
 
 # Today's spend
 sudo cat /var/lib/sql-explorer/budget.json

@@ -32,8 +32,10 @@ NOTHING ON THIS PAGE SPENDS A TOKEN
 -----------------------------------
 `agent.call_tool` reaches MCP directly with no model in the path, so browsing the
 schema is free and is not charged to the budget ledger. That matters: a visitor
-should be able to work out what to ask BEFORE spending one of their twelve
-questions finding out the data does not go back to 2015.
+should be able to work out what to ask BEFORE spending one of their session's
+questions finding out the data does not go back to 2015. (The box runs a tighter
+per-session cap than the laptop default -- see /etc/sql-explorer/app.env -- which
+is another reason not to name a number here.)
 """
 
 from __future__ import annotations
