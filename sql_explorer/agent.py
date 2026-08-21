@@ -59,6 +59,28 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 import budget
 
+
+def _load_env() -> None:
+    """Read .env next to this file, without adding a dependency.
+
+    Values already in the environment win, so systemd's EnvironmentFile and a
+    shell export both override the file rather than fighting it.
+    """
+    path = Path(__file__).parent / ".env"
+    if not path.exists():
+        return
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+# Read at import, BEFORE the constants below. Both of them read the environment,
+# so a .env loaded any later than this is a .env that silently does nothing.
+_load_env()
+
 MCP_URL = os.environ.get("SQLX_MCP_URL", "http://127.0.0.1:8770/mcp")
 MODEL = os.environ.get("SQLX_MODEL", "gemini-3.7-flash")
 
@@ -152,35 +174,29 @@ def run_sync(coro, timeout: float = 180.0) -> Any:
 # --------------------------------------------------------------------------- #
 
 
-def _load_env() -> None:
-    """Read .env next to this file, without adding a dependency.
-
-    Values already in the environment win, so systemd's EnvironmentFile and a
-    shell export both override the file rather than fighting it.
-    """
-    path = Path(__file__).parent / ".env"
-    if not path.exists():
-        return
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
 class SetupError(RuntimeError):
     """Configuration or connectivity problem, phrased for the operator."""
 
 
-async def _build() -> tuple[Any, list[str]]:
-    _load_env()
+# Discovered once and reused. Tool discovery is a live HTTP call and the client's
+# sessions belong to the loop that created them, so this is deliberately not
+# rebuilt per caller -- see WHY A BACKGROUND EVENT LOOP above.
+_tools_by_name: dict[str, Any] | None = None
+_client: Any = None
 
-    if not os.environ.get("GOOGLE_API_KEY"):
-        raise SetupError(
-            "GOOGLE_API_KEY is not set. Put it in sql_explorer/.env "
-            "(see .env.example) or export it before starting Streamlit."
-        )
+
+async def _discover_tools() -> dict[str, Any]:
+    """The three exposed MCP tools, by name. Reaches the server on first call.
+
+    Split out of `_build` because the data-model page needs `list_schema` and
+    `describe_table` WITHOUT an LLM. Building the model to read a table's columns
+    would make the schema reference depend on GOOGLE_API_KEY being set and on the
+    provider being up, neither of which has anything to do with reading
+    pg_catalog. Nothing here spends a token.
+    """
+    global _tools_by_name, _client
+    if _tools_by_name is not None:
+        return _tools_by_name
 
     client = MultiServerMCPClient(
         {"weather": {"transport": "streamable_http", "url": MCP_URL}}
@@ -196,8 +212,8 @@ async def _build() -> tuple[Any, list[str]]:
             "On the box it is the `weather-mcp` systemd service."
         ) from exc
 
-    tools = [t for t in discovered if t.name in EXPOSED_TOOLS]
-    missing = set(EXPOSED_TOOLS) - {t.name for t in tools}
+    tools = {t.name: t for t in discovered if t.name in EXPOSED_TOOLS}
+    missing = set(EXPOSED_TOOLS) - set(tools)
     if missing:
         # An older server build, or a partial start. Better to say so than to run
         # with a crippled tool set and let the model improvise.
@@ -206,13 +222,47 @@ async def _build() -> tuple[Any, list[str]]:
             f"It offered: {sorted(t.name for t in discovered)}. Update the server."
         )
 
+    _client = client
+    _tools_by_name = tools
+    return tools
+
+
+def call_tool(name: str, arguments: dict | None = None, timeout: float = 45.0) -> Any:
+    """Call one MCP tool directly, with no model involved.
+
+    This is how the data-model page reads the schema: `list_schema` and
+    `describe_table` return the table and column COMMENTs straight out of
+    pg_catalog, so the documentation on the page is the database's own and cannot
+    drift away from it. Because no LLM is in the path, it is also free and is not
+    charged to the budget ledger.
+    """
+
+    async def _run() -> Any:
+        tools = await _discover_tools()
+        tool = tools.get(name)
+        if tool is None:
+            raise SetupError(f"The MCP server does not expose {name!r}.")
+        return await tool.ainvoke(arguments or {})
+
+    return run_sync(_run(), timeout=timeout)
+
+
+async def _build() -> tuple[Any, list[str]]:
+    if not os.environ.get("GOOGLE_API_KEY"):
+        raise SetupError(
+            "GOOGLE_API_KEY is not set. Put it in sql_explorer/.env "
+            "(see .env.example) or export it before starting Streamlit."
+        )
+
+    tools = await _discover_tools()
+
     llm = ChatGoogleGenerativeAI(
         model=MODEL,
         temperature=0,  # SQL generation: same question, same query.
         max_retries=2,
     )
-    agent = create_agent(llm, tools, system_prompt=SYSTEM_PROMPT)
-    return agent, [t.name for t in tools]
+    agent = create_agent(llm, list(tools.values()), system_prompt=SYSTEM_PROMPT)
+    return agent, list(tools)
 
 
 def build_agent() -> tuple[Any, list[str]]:

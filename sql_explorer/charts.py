@@ -307,7 +307,16 @@ def figure(frame: pd.DataFrame, chart_plan: dict) -> go.Figure:
                     hovertemplate=f"%{{x}}<br>{measure}: %{{y:,.2f}}<extra></extra>",
                 )
             )
-        fig.update_layout(**theme.layout(dark))
+        # automargin, for the same reason the horizontal-bar path below sets it:
+        # theme.layout's 8px margins are deliberately tight, and Plotly does not
+        # widen them to fit tick labels -- it truncates them. On a line chart
+        # that clipped every y-axis value down to its last digit and cut the date
+        # labels off the bottom edge. Set here rather than in theme.py, which is
+        # kept identical to the weblog dashboard's copy.
+        layout = theme.layout(dark)
+        layout["xaxis"]["automargin"] = True
+        layout["yaxis"]["automargin"] = True
+        fig.update_layout(**layout)
         fig.update_xaxes(title_text=axis)
         fig.update_yaxes(title_text=measures[0] if single else None)
         return fig

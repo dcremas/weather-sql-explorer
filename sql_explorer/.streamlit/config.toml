@@ -1,0 +1,55 @@
+# Streamlit theme tokens for the SQL explorer.
+#
+# WHY THIS FILE EXISTS
+# Without it Streamlit paints its own default accent (#FF4B4B, a red) over
+# buttons, links, focus rings and spinners. Every chart on this page is drawn
+# from theme.py, whose slot 1 is blue and whose slot 8 is red -- so the default
+# accent made the chrome argue with the data, and made "red" mean two different
+# things on one screen. These values are the same tokens theme.py uses, so the
+# frame and the marks come from one palette.
+#
+# LIGHT AND DARK ARE BOTH DEFINED, DELIBERATELY.
+# theme.py picks its palette from `st.context.theme.type`, which reports what
+# the viewer is actually in. Pinning colours in a bare [theme] table would fix
+# the page to one mode while the charts kept switching, so the two halves are
+# declared as [theme.light] and [theme.dark] and Streamlit resolves which one
+# applies. Keep these in sync with `_LIGHT` and `_DARK` in theme.py.
+#
+# NOT SET ON PURPOSE: chartCategoricalColors. It would make Streamlit's own
+# chart theme agree with ours, which sounds good and is a trap -- it would mask
+# the bug that constraint 1 in app.py exists to prevent, by making a chart that
+# lost `theme=None` still look roughly right.
+
+[theme]
+font = "sans-serif"
+headingFont = "sans-serif"
+codeFont = "monospace"
+baseFontSize = 15
+baseRadius = "0.5rem"
+buttonRadius = "0.5rem"
+showWidgetBorder = true
+linkUnderline = false
+
+[theme.light]
+primaryColor = "#2a78d6"
+backgroundColor = "#fcfcfb"
+secondaryBackgroundColor = "#f2f1ec"
+textColor = "#0b0b0b"
+linkColor = "#1f5fae"
+borderColor = "#e2e1dc"
+dataframeBorderColor = "#e2e1dc"
+dataframeHeaderBackgroundColor = "#f2f1ec"
+codeBackgroundColor = "#f4f3ee"
+codeTextColor = "#1c3f6e"
+
+[theme.dark]
+primaryColor = "#3987e5"
+backgroundColor = "#1a1a19"
+secondaryBackgroundColor = "#242423"
+textColor = "#ffffff"
+linkColor = "#7db1f0"
+borderColor = "#33332f"
+dataframeBorderColor = "#33332f"
+dataframeHeaderBackgroundColor = "#242423"
+codeBackgroundColor = "#212120"
+codeTextColor = "#9dc4f2"

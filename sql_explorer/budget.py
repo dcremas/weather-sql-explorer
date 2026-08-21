@@ -49,7 +49,22 @@ STATE_PATH = Path(
 # laptop without a code change.
 MAX_QUESTIONS_PER_SESSION = int(os.environ.get("SQLX_MAX_SESSION_QUESTIONS", "12"))
 MAX_TOKENS_PER_DAY = int(os.environ.get("SQLX_MAX_DAILY_TOKENS", "2000000"))
-MAX_AGENT_STEPS = int(os.environ.get("SQLX_MAX_AGENT_STEPS", "14"))
+# 20, raised from 14 on 2026-08-21. 14 was cutting off legitimate questions
+# rather than only runaways, and it was doing it right at the boundary. The
+# example question "the daily average temperature at Denver for the last 30 days"
+# needs four queries -- resolve the station name, find the latest date, then the
+# aggregate -- and measured at EXACTLY 14 agent steps, which against a limit of
+# 14 fails or succeeds depending on where the final answer message lands. So it
+# failed intermittently, on a button on the landing page.
+#
+# A question that dies on the step limit still charges the visitor and returns
+# nothing, which is the worst outcome available; 20 leaves that question six
+# steps of headroom while still catching a genuine retry spiral.
+#
+# This raises the worst-case steps per question, not the worst-case spend:
+# MAX_TOKENS_PER_QUESTION below still bounds any single question, and the daily
+# total is bounded by MAX_TOKENS_PER_DAY regardless.
+MAX_AGENT_STEPS = int(os.environ.get("SQLX_MAX_AGENT_STEPS", "20"))
 
 # A single question that somehow burns more than this is a runaway; charge it and
 # move on rather than letting an unbounded number land on the daily total.
