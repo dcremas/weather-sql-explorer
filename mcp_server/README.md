@@ -51,8 +51,18 @@ If you only ever ask these questions from the terminal, you do not need this.
 
 ## 2. Prerequisites — the SSH tunnel
 
-Public 5432 is closed (see `AWS-INVENTORY-RUNBOOK.md` §2), so the tunnel is the
-**only** route to Postgres. Nothing here works without it:
+> **This section is about running the server on your Mac.** There is a second
+> deployment mode this README otherwise does not cover: the server also runs
+> **on the EC2 box** as `weather-mcp.service` (`127.0.0.1:8770`), which is how
+> the SQL Explorer web app reaches the warehouse. There the connection is local
+> and **no tunnel is involved** — provisioning, the unit, and its user separation
+> are documented in `../sql_explorer/deploy/README-deploy.md`. Everything below
+> applies to the laptop mode only.
+
+Public 5432 is closed to the internet (`../../NGINX-RUNBOOK.md` §11 has the full
+two-layer firewall; `../../AWS-INVENTORY-RUNBOOK.md` §2 notes the private IP), so
+from the Mac the tunnel is the **only** route to Postgres. Nothing here works
+without it:
 
 ```bash
 ssh -f -N -T -L 15432:127.0.0.1:5432 \
@@ -288,9 +298,17 @@ authentication error while local queries keep working, which is a confusing way
 to discover it. `pg_user_mapping` is superuser-only, so the password is not
 exposed to `mcp_ro` itself.
 
-**Network exposure: none added.** The server runs locally on the Mac and reaches
-Postgres through the existing tunnel. Nothing is opened on the EC2 side, and
-public 5432 stays closed.
+**Network exposure: none added, in either mode.**
+
+- *On the Mac:* the server reaches Postgres through the existing tunnel. Nothing
+  is opened on the EC2 side.
+- *On EC2:* `weather-mcp.service` binds **`127.0.0.1:8770` only** — verified
+  2026-08-25 with `ss -ltnp`. It is not proxied by nginx and must not be; the only
+  client is the co-located `sql-explorer` unit. The two run as different service
+  users so that `sqlxapp` cannot read `/etc/weather-mcp/mcp.env`, which is what
+  keeps the database password out of reach of the public web tier.
+
+Public 5432 stays closed to the internet in both cases.
 
 **The credential** lives only in `.env` (mode 600, gitignored). It is not in the
 Claude Desktop config, not in the repo, and not in any command line.

@@ -263,7 +263,11 @@ sql_explorer/
   app.py               Streamlit page and the ask/answer loop; the six
                        constraints in §6 live in its docstring
   ui.py                the stylesheet and the SVG primitives; knows nothing
-                       about which colour mode the page is in, on purpose
+                       about which colour mode the page is in, on purpose.
+                       Also holds `SITES` -- one of seven copies of the
+                       estate-wide footer row (canonical:
+                       ../../prosite_flask/content.py; run
+                       ../../check-footer-nav.sh after touching it)
   guide.py             the "How it works" explainer — see §0
   data_model.py        the "Data model" schema reference, read live — see §0
   agent.py             MCP client + Gemini + the background event loop.
@@ -277,5 +281,8 @@ sql_explorer/
                        for anything it covers, so check it before adding CSS
   run.sh               local launcher; pre-checks the tunnel and the MCP server
   requirements.txt     note the deliberate `mcp<2` pin — see §2
-  deploy/              systemd units, nginx vhost, provisioning
+  deploy/              systemd units, nginx vhost, provisioning -- note its
+                       provision.sh/enable-tls.sh write nginx backups into
+                       /etc/nginx/conf.d/ rather than the archive convention
+                       the weblog scripts use (../../NGINX-RUNBOOK.md S1)
 ```
