@@ -49,6 +49,17 @@ STATE_PATH = Path(
 # laptop without a code change.
 MAX_QUESTIONS_PER_SESSION = int(os.environ.get("SQLX_MAX_SESSION_QUESTIONS", "12"))
 MAX_TOKENS_PER_DAY = int(os.environ.get("SQLX_MAX_DAILY_TOKENS", "2000000"))
+# 28, raised from 20 on 2026-09-08 with the move to Gemini 3.8 Flash, which
+# needs more agent steps than 3.7 did for the same work. Measured on the same
+# Denver question, against the live MCP server: 3.7 took 16/17/17/20 steps and
+# fitted under 20; 3.8 took 20/22/22/30 and did not, failing outright on two
+# further runs. reasoning_effort=low (see agent.py) pulls it back to 17/17/21 --
+# better, but still over 20 on one run in four, so the effort setting alone does
+# not fix this. 28 clears the worst measured run at low effort with headroom and
+# still catches a genuine spiral. Verified after deploying both changes, five
+# runs through the same build_agent/ask path the app uses: 18/24/19/22/20 steps,
+# 5 of 5 answered, 52-65k tokens. The history below is why the boundary matters.
+#
 # 20, raised from 14 on 2026-08-21. 14 was cutting off legitimate questions
 # rather than only runaways, and it was doing it right at the boundary. The
 # example question "the daily average temperature at Denver for the last 30 days"
@@ -64,7 +75,7 @@ MAX_TOKENS_PER_DAY = int(os.environ.get("SQLX_MAX_DAILY_TOKENS", "2000000"))
 # This raises the worst-case steps per question, not the worst-case spend:
 # MAX_TOKENS_PER_QUESTION below still bounds any single question, and the daily
 # total is bounded by MAX_TOKENS_PER_DAY regardless.
-MAX_AGENT_STEPS = int(os.environ.get("SQLX_MAX_AGENT_STEPS", "20"))
+MAX_AGENT_STEPS = int(os.environ.get("SQLX_MAX_AGENT_STEPS", "28"))
 
 # A single question that somehow burns more than this is a runaway; charge it and
 # move on rather than letting an unbounded number land on the daily total.

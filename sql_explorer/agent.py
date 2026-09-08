@@ -260,6 +260,20 @@ async def _build() -> tuple[Any, list[str]]:
         model=MODEL,
         temperature=0,  # SQL generation: same question, same query.
         max_retries=2,
+        # 3.8 Flash reasons by default and cannot be told not to -- the API
+        # accepts low/medium/high and rejects "minimal". Left at its default it
+        # spends roughly 78k tokens on the Denver example question against 3.7
+        # Flash's 45k, which at SQLX_MAX_DAILY_TOKENS=1.5M is the difference
+        # between ~33 and ~19 questions a day, i.e. two visitors exhausting the
+        # budget. Measured 2026-09-08, five runs per setting against the live
+        # MCP server: low takes it to ~58k without changing the answers. That
+        # is most of the gap closed but not all of it -- 3.8 on this workload
+        # still costs more than 3.7 did, ~25 questions a day against ~33, and
+        # raising the step limit to 28 is part of why: runs that used to be cut
+        # off at 20 now finish, and a finished run costs more than a truncated
+        # one. It is not a fix for the step limit on its own -- see
+        # MAX_AGENT_STEPS in budget.py.
+        reasoning_effort="low",
     )
     agent = create_agent(llm, list(tools.values()), system_prompt=SYSTEM_PROMPT)
     return agent, list(tools)
