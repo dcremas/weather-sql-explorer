@@ -4,7 +4,7 @@ SHAPE OF THE THING
 ------------------
     Streamlit (sync)
       -> one background asyncio loop, for the app's whole life
-        -> LangChain agent (Gemini 3.7 Flash)
+        -> LangChain agent (Gemini 3.8 Flash)
           -> MCP tools over streamable HTTP to 127.0.0.1:8770
             -> mcp_ro on Postgres, SELECT-only
 
@@ -82,7 +82,7 @@ def _load_env() -> None:
 _load_env()
 
 MCP_URL = os.environ.get("SQLX_MCP_URL", "http://127.0.0.1:8770/mcp")
-MODEL = os.environ.get("SQLX_MODEL", "gemini-3.7-flash")
+MODEL = os.environ.get("SQLX_MODEL", "gemini-3.8-flash")
 
 # Only the three SQL-shaped tools are exposed, out of the server's thirteen.
 #

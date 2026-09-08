@@ -84,7 +84,7 @@ _STAGES = [
         "the question, plus what the tables contain",
     ),
     (
-        "Gemini 3.7 Flash",
+        "Gemini 3.8 Flash",
         "the language model — writes one SQL query",
         "a proposed SQL query",
     ),
@@ -120,7 +120,7 @@ def pipeline_svg() -> str:
             height,
             "How a question becomes an answer",
             "Five stages in order: you type a question in a browser; the web app "
-            "adds a description of the tables; Gemini 3.7 Flash writes one SQL "
+            "adds a description of the tables; Gemini 3.8 Flash writes one SQL "
             "query; a query checker parses and approves it; PostgreSQL runs it "
             "read-only. The rows, the chart and the query itself all travel back "
             "to the browser.",

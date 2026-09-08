@@ -1,7 +1,7 @@
 # Weather Warehouse SQL Explorer
 
 **Ask a weather question in English; get PostgreSQL, a chart, and the rows.**
-Gemini 3.7 Flash writes the SQL, a Model Context Protocol server executes it as a
+Gemini 3.8 Flash writes the SQL, a Model Context Protocol server executes it as a
 read-only role, and the query is shown next to the answer. Built 2026-08-20.
 
 The web tier holds **no database credentials and builds no SQL**. Everything goes
@@ -12,7 +12,7 @@ the warehouse at risk — it was never trusted with it.
 browser
   → nginx                TLS, per-IP rate limit
     → Streamlit           127.0.0.1:8503   this app
-      → LangChain agent   Gemini 3.7 Flash
+      → LangChain agent   Gemini 3.8 Flash
         → MCP server      127.0.0.1:8770   ../mcp_server, 3 of its 13 tools
           → Postgres      mcp_ro, SELECT on 10 tables, read-only txn, 30s timeout
 ```
