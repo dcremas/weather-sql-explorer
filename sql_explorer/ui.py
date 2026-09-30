@@ -394,7 +394,7 @@ def figure(svg: str, caption: str | None = None, max_width: int | None = None) -
 # The cross-site footer
 # --------------------------------------------------------------------------- #
 #
-# The five public properties served off the one EC2 box. Same row, same order,
+# The eight public properties served off the one EC2 box. Same row, same order,
 # at the bottom of every surface nginx fronts -- the two Flask sites, the seven
 # Bokeh apps, the Swagger docs, the analytics dashboard and this app.
 #
@@ -409,6 +409,9 @@ SITES = [
     ("viz", "Data Viz", "https://www.dustincremascoli.com/visualizations"),
     ("sql", "SQL Explorer", "https://sql.dustincremascoli.com/"),
     ("api", "Weather API", "https://api.dustincremascoli.com/docs"),
+    ("pbp", "Football SQL", "https://pbp.dustincremascoli.com/"),
+    ("plays", "Play Explorer", "https://pbp.dustincremascoli.com/plays/"),
+    ("typing", "PromptPace", "https://typing.dustincremascoli.com/"),
     ("recipes", "Recipes", "https://recipes.dustincremascoli.com/"),
 ]
 
