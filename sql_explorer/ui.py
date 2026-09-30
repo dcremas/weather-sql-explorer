@@ -222,6 +222,40 @@ _CSS = """
 .sx-flow { font-size: 11.5px; fill: rgba(128,128,128,1); }
 .sx-rail { font-size: 11px; font-weight: 600; fill: ACCENT_COLOR; }
 
+/* --- footer ----------------------------------------------------------- */
+/* The bottom-of-page navigation every surface on this box carries. This app is
+   reached from the main site's nav and its own banner, and until this existed
+   the only way back out was the sidebar or the browser's back button.
+
+   Neutral greys here, tinted by the color-mix block below where it is
+   supported, for the same reason as everything else in this stylesheet: no
+   theme flag, so a Light/Dark switch is correct immediately rather than on the
+   next rerun. */
+.sqlx-footer {
+    margin: 3rem 0 0.5rem 0; padding-top: 1.2rem;
+    border-top: 1px solid rgba(128, 128, 128, 0.28);
+}
+.sqlx-footer .sqlx-footer-label {
+    margin: 0 0 0.4rem 0; font-size: 0.68rem; font-weight: 650;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(128, 128, 128, 0.95);
+}
+.sqlx-footer ul {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 0.2rem 0.3rem; font-size: 0.9rem;
+}
+.sqlx-footer li { display: inline-flex; align-items: center; }
+.sqlx-footer a { color: ACCENT_COLOR; text-decoration: none; font-weight: 550; }
+.sqlx-footer a:hover { text-decoration: underline; }
+/* The property you are already on. Still a link, muted -- see the SITES comment
+   in prosite_flask/content.py for why it is not simply dropped. */
+.sqlx-footer a[aria-current] { color: rgba(128, 128, 128, 0.95); font-weight: 650; }
+.sqlx-footer .sqlx-sep { color: rgba(128, 128, 128, 0.5); margin: 0 0.4rem; }
+.sqlx-footer .sqlx-credit {
+    margin: 0.9rem 0 0 0; font-size: 0.78rem;
+    color: rgba(128, 128, 128, 0.95);
+}
+
 /* --- the color-mix upgrade -------------------------------------------- */
 /* Everything above degrades to legible without this block. Where color-mix is
    supported -- which is everywhere current -- these rules replace the neutral
@@ -240,6 +274,13 @@ _CSS = """
     .sqlx-step .sqlx-step-n { color: color-mix(in srgb, currentColor 55%, transparent); }
     .sqlx-step p { color: color-mix(in srgb, currentColor 68%, transparent); }
     .sqlx-caption { color: color-mix(in srgb, currentColor 62%, transparent); }
+    .sqlx-footer { border-top-color: color-mix(in srgb, currentColor 18%, transparent); }
+    .sqlx-footer .sqlx-footer-label,
+    .sqlx-footer .sqlx-credit,
+    .sqlx-footer a[aria-current] {
+        color: color-mix(in srgb, currentColor 58%, transparent);
+    }
+    .sqlx-footer .sqlx-sep { color: color-mix(in srgb, currentColor 30%, transparent); }
     .sqlx-callout {
         border-color: color-mix(in srgb, currentColor 22%, transparent);
         background: color-mix(in srgb, currentColor 5%, transparent);
@@ -346,6 +387,70 @@ def figure(svg: str, caption: str | None = None, max_width: int | None = None) -
     cap = f' style="max-width:{max_width}px"' if max_width else ""
     st.markdown(
         f'<div class="sqlx-figure"{cap}>{svg}</div>{tail}', unsafe_allow_html=True
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The cross-site footer
+# --------------------------------------------------------------------------- #
+#
+# The five public properties served off the one EC2 box. Same row, same order,
+# at the bottom of every surface nginx fronts -- the two Flask sites, the seven
+# Bokeh apps, the Swagger docs, the analytics dashboard and this app.
+#
+# Keep in step with prosite_flask/content.py SITES -- that is the canonical copy
+# and its comment names all seven. check-footer-nav.sh in the ec2-nginx
+# directory diffs them and exits non-zero when they disagree.
+#
+# Every href is absolute, including this app's own: a Streamlit app is a single
+# page and a relative "/" would reload it rather than go anywhere.
+SITES = [
+    ("www", "Main site", "https://www.dustincremascoli.com/"),
+    ("viz", "Data Viz", "https://www.dustincremascoli.com/visualizations"),
+    ("sql", "SQL Explorer", "https://sql.dustincremascoli.com/"),
+    ("api", "Weather API", "https://api.dustincremascoli.com/docs"),
+    ("recipes", "Recipes", "https://recipes.dustincremascoli.com/"),
+]
+
+SITES_CURRENT = "sql"
+
+SITES_LABEL = "Everything here"
+
+CREDIT = "Produced with the aid of Claude Code&#39;s Command Line tools..."
+
+
+def footer() -> None:
+    """The site-wide footer. Call once, last, from the main body.
+
+    Not the sidebar. The sidebar already carries a Source/main-site pair, but a
+    sidebar is a standing panel a visitor learns to stop looking at, and on a
+    phone it is collapsed behind a hamburger. This is the end of the page, which
+    is where someone who has finished reading actually is.
+
+    Rendered with `st.html` rather than `st.markdown(unsafe_allow_html=True)`:
+    DOMPurify's html profile keeps every element used here. See `figure` for the
+    one case -- SVG -- where that profile is the wrong choice.
+    """
+    items = []
+    for i, (key, label, href) in enumerate(SITES):
+        current = key == SITES_CURRENT
+        mark = ' aria-current="page"' if current else ""
+        # The separator lives inside the <li>; a <span> as a direct child of a
+        # <ul> is invalid and gets hoisted out of the list.
+        sep = "" if i == len(SITES) - 1 else '<span class="sqlx-sep" aria-hidden="true">·</span>'
+        # Off-site links open in a new tab; the entry for THIS app does not --
+        # a new tab holding a second copy of the app you are already in is the
+        # one outcome nobody clicking it wants.
+        tab = "" if current else ' target="_blank" rel="noopener noreferrer"'
+        items.append(
+            f'<li><a href="{href}"{mark}{tab}>'
+            f"{html.escape(label)}</a>{sep}</li>"
+        )
+    st.html(
+        '<div class="sqlx-footer"><nav aria-label="Site">'
+        f'<p class="sqlx-footer-label">{SITES_LABEL}</p>'
+        f'<ul>{"".join(items)}</ul></nav>'
+        f'<p class="sqlx-credit">{CREDIT}</p></div>'
     )
 
 

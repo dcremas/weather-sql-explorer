@@ -535,6 +535,11 @@ def main() -> None:
             data_model.render()
     finally:
         render_sidebar(usage)
+        # Last thing on the page, and inside the `finally` for the same reason
+        # the sidebar is: a failure in one tab should not cost the visitor the
+        # way out of the app. render_sidebar leaves the main body as the active
+        # container, so this lands under the tabs, not in the sidebar.
+        ui.footer()
 
 
 if __name__ == "__main__":
