@@ -29,8 +29,9 @@ TWO CONSEQUENCES WORTH KNOWING
    near-white and a near-black surface -- that is geometry, not a bad pick -- so
    the accent is used for borders, rules and diagram strokes, where 3:1 is the
    bar, and never for small text. The "STEP 1" eyebrows are muted grey rather
-   than blue for exactly this reason. Measured: 3.96:1 on the light surface,
-   4.29:1 on the dark one.
+   than blue for exactly this reason. Since 2026-10-12 it is the main site's
+   #0b6bcb, shared across the estate. Measured: 5.14:1 on the light surface,
+   3.30:1 on the dark one. (The previous #2f7fda was 3.96:1 and 4.29:1.)
 
 2. Every `color-mix` rule is paired with a plain fallback that degrades to
    legible rather than to invisible. For text that means inheriting the theme
@@ -68,9 +69,9 @@ import html
 
 import streamlit as st
 
-# One accent for both colour modes -- see consequence 1 above. Also the value
-# `.streamlit/config.toml` sets as primaryColor, so chrome and diagrams agree.
-ACCENT = "#2f7fda"
+# One accent for both colour modes -- see consequence 1 above. The main site's
+# blue, and light mode's primaryColor in `.streamlit/config.toml`.
+ACCENT = "#0b6bcb"
 
 # NEVER WRITE AN ANGLE-BRACKETED TAG NAME INSIDE THIS STYLESHEET, NOT EVEN IN A
 # COMMENT. Streamlit runs `st.html` content through DOMPurify, and a `<style>`
@@ -118,6 +119,21 @@ _CSS = """
     margin: 0; color: inherit;
 }
 .sqlx-hero .sqlx-lede strong { font-weight: 640; }
+/* The main site's leader line (2026-10-12): a hairline under the masthead, and
+   after each markdown section heading, fading from a border grey into the
+   accent. The heading rule is the third data-testid this file uses -- cosmetic,
+   like the other two: if a release renames it, the lines just stop drawing. */
+.sqlx-hero::after {
+    content: ""; display: block; height: 1px; margin-top: 1.1rem;
+    background: linear-gradient(to right, rgba(128,128,128,0.28), ACCENT_COLOR);
+}
+[data-testid="stMarkdownContainer"] h3,
+[data-testid="stMarkdownContainer"] h5 { display: flex; align-items: center; gap: 0.75rem; }
+[data-testid="stMarkdownContainer"] h3::after,
+[data-testid="stMarkdownContainer"] h5::after {
+    content: ""; flex: 1 1 1.5rem; height: 1px; order: 99;
+    background: linear-gradient(to right, rgba(128,128,128,0.28), ACCENT_COLOR);
+}
 
 /* --- fact chips ------------------------------------------------------- */
 .sqlx-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.95rem 0 0 0; }
@@ -196,13 +212,13 @@ _CSS = """
 /* All geometry comes from the caller; all colour comes from here. */
 .sx-panel { fill: rgba(128,128,128,0.05); stroke: rgba(128,128,128,0.20); }
 .sx-box { fill: rgba(128,128,128,0.09); stroke: rgba(128,128,128,0.34); stroke-width: 1; }
-.sx-box-fact { fill: rgba(47,127,218,0.13); stroke: ACCENT_COLOR; stroke-width: 1.7; }
+.sx-box-fact { fill: rgba(11,107,203,0.13); stroke: ACCENT_COLOR; stroke-width: 1.7; }
 .sx-foreign { stroke-dasharray: 5 3; }
 .sx-seam { fill: none; stroke: ACCENT_COLOR; stroke-width: 1.2; stroke-dasharray: 6 4; }
 .sx-edge { fill: none; stroke: rgba(128,128,128,0.55); stroke-width: 1.3; }
 .sx-edge-key { fill: none; stroke: ACCENT_COLOR; stroke-width: 2.2; }
 
-.sx-text { fill: currentColor; font-family: system-ui,-apple-system,Segoe UI,sans-serif; }
+.sx-text { fill: currentColor; font-family: "Inter Variable",system-ui,-apple-system,Segoe UI,sans-serif; }
 .sx-mono { font-family: ui-monospace,SFMono-Regular,Menlo,monospace; }
 .sx-head { font-size: 13px; font-weight: 660; }
 .sx-sub { font-size: 11px; fill: rgba(128,128,128,0.95); }

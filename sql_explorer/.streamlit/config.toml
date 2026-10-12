@@ -20,9 +20,19 @@
 # the bug that constraint 1 in app.py exists to prevent, by making a chart that
 # lost `theme=None` still look roughly right.
 
+# INTER AND THE MAIN SITE'S BLUE (2026-10-12). The font is the main
+# dustincremascoli.com site's Inter, served from ./static/fonts/ (static serving
+# below) -- the same file, SIL OFL 1.1, licence beside it. Light mode's primary
+# and links are the main site's #0b6bcb; dark links are its #61a8ff. Dark
+# primary stays #3987e5: Streamlit sets white text on primary buttons, and
+# white on #61a8ff is 2.5:1. ui.ACCENT is #0b6bcb in both modes (see ui.py).
+
+[server]
+enableStaticServing = true
+
 [theme]
-font = "sans-serif"
-headingFont = "sans-serif"
+font = "Inter Variable, sans-serif"
+headingFont = "Inter Variable, sans-serif"
 codeFont = "monospace"
 baseFontSize = 15
 baseRadius = "0.5rem"
@@ -30,12 +40,18 @@ buttonRadius = "0.5rem"
 showWidgetBorder = true
 linkUnderline = false
 
+[[theme.fontFaces]]
+family = "Inter Variable"
+url = "app/static/fonts/inter-latin-wght-normal.woff2"
+weight = "100 900"
+style = "normal"
+
 [theme.light]
-primaryColor = "#2a78d6"
+primaryColor = "#0b6bcb"
 backgroundColor = "#fcfcfb"
 secondaryBackgroundColor = "#f2f1ec"
 textColor = "#0b0b0b"
-linkColor = "#1f5fae"
+linkColor = "#0b6bcb"
 borderColor = "#e2e1dc"
 dataframeBorderColor = "#e2e1dc"
 dataframeHeaderBackgroundColor = "#f2f1ec"
@@ -47,7 +63,7 @@ primaryColor = "#3987e5"
 backgroundColor = "#1a1a19"
 secondaryBackgroundColor = "#242423"
 textColor = "#ffffff"
-linkColor = "#7db1f0"
+linkColor = "#61a8ff"
 borderColor = "#33332f"
 dataframeBorderColor = "#33332f"
 dataframeHeaderBackgroundColor = "#242423"
