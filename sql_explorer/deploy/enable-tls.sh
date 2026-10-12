@@ -69,7 +69,11 @@ else
 fi
 
 log "Installing the TLS vhost"
-BACKUP="${VHOST}.bak-$(date +%Y%m%d-%H%M%S)"
+# The backup goes to the archive, NOT next to the vhost: a .bak-* inside conf.d/
+# is not loaded but reads as if it were (NGINX-RUNBOOK.md §1 in ec2-nginx).
+ARCHIVE=/home/ec2-user/nginx-conf-archive
+install -d -m 0755 -o ec2-user -g ec2-user "$ARCHIVE"
+BACKUP="${ARCHIVE}/$(basename "$VHOST").bak-$(date +%Y%m%d-%H%M%S)"
 cp -a "$VHOST" "$BACKUP"
 install -m 644 "$SRC/sqlx.conf" "$VHOST"
 

@@ -230,7 +230,7 @@ def _operational_hint(exc: Exception) -> str:
             "certainly down — public 5432 is closed, so the tunnel is the only "
             "route. Restart it with:\n\n"
             "  ssh -f -N -T -L 15432:127.0.0.1:5432 "
-            "-i ~/Automation/Raise/lambda-playground-1.pem ec2-user@<EC2_PUBLIC_IP>\n\n"
+            "-i <PATH_TO_SSH_KEY> ec2-user@<EC2_PUBLIC_IP>\n\n"
             f"{text}"
         )
     return (

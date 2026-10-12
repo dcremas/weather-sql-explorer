@@ -66,7 +66,7 @@ without it:
 
 ```bash
 ssh -f -N -T -L 15432:127.0.0.1:5432 \
-    -i ~/Automation/Raise/lambda-playground-1.pem ec2-user@<EC2_PUBLIC_IP>
+    -i <PATH_TO_SSH_KEY> ec2-user@<EC2_PUBLIC_IP>
 ```
 
 Check it:
