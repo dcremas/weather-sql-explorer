@@ -95,7 +95,7 @@ st.set_page_config(
 # and who made it. Both live in the sidebar rather than the masthead -- the
 # question box should stay the loudest thing on the page.
 REPO_URL = "https://github.com/dcremas/weather-sql-explorer"
-SITE_URL = "https://www.dustincremascoli.com"
+SITE_URL = "https://www.dustincremascoli.com/"
 
 # The masthead facts. Deliberately approximate and hardcoded: they render on
 # every page load, and making the landing view wait on -- or fail with -- a
@@ -310,8 +310,17 @@ def render_sidebar(usage: dict) -> None:
             st.caption("⚠️ The usage ledger is unreadable, so questions are paused.")
 
         st.divider()
+        # Explicit anchors, not markdown links: Streamlit would open those in a
+        # new tab too, but with no cue. This app is stateful, so links out DO open
+        # new tabs, and each says so (ui.NEW_TAB_CUE). The main site is the
+        # estate's own, so it keeps the Referer (rel="noopener" alone); GitHub is
+        # third-party.
         st.markdown(
-            f"[Source on GitHub]({REPO_URL}) · [dustincremascoli.com]({SITE_URL})"
+            f'<a href="{REPO_URL}" target="_blank" rel="noopener noreferrer">'
+            f"Source on GitHub{ui.NEW_TAB_CUE}</a> · "
+            f'<a href="{SITE_URL}" target="_blank" rel="noopener">'
+            f"dustincremascoli.com{ui.NEW_TAB_CUE}</a>",
+            unsafe_allow_html=True,
         )
         st.caption(
             "The repo holds both halves: this app, and the MCP server that "

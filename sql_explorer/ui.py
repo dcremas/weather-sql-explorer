@@ -263,13 +263,26 @@ _CSS = """
 .sqlx-footer li { display: inline-flex; align-items: center; }
 .sqlx-footer a { color: ACCENT_COLOR; text-decoration: none; font-weight: 550; }
 .sqlx-footer a:hover { text-decoration: underline; }
-/* The property you are already on. Still a link, muted -- see the SITES comment
-   in prosite_flask/content.py for why it is not simply dropped. */
-.sqlx-footer a[aria-current] { color: rgba(128, 128, 128, 0.95); font-weight: 650; }
+/* The property you are already on: kept in the row, muted, and NOT a link. In a
+   stateful app like this one a link to itself would reload the page and wipe
+   the conversation, so it is a span marked aria-current (link policy section 4). */
+.sqlx-footer [aria-current] { color: rgba(128, 128, 128, 0.95); font-weight: 650; }
+/* The new-tab cue on every outbound link, footer and sidebar alike: a visible
+   arrow, hidden from screen readers, which hear the sr-only "(opens in a new
+   tab)" text instead. */
+.sqlx-ext { display: inline-block; margin-left: 0.15em; font-size: 0.85em; opacity: 0.6; }
 .sqlx-footer .sqlx-sep { color: rgba(128, 128, 128, 0.5); margin: 0 0.4rem; }
 .sqlx-footer .sqlx-credit {
     margin: 0.9rem 0 0 0; font-size: 0.78rem;
     color: rgba(128, 128, 128, 0.95);
+}
+
+/* --- screen-reader-only text ---------------------------------------- */
+/* The standard visually-hidden pattern: read aloud, never painted. Global, so
+   the sidebar's links in app.py use it too. */
+.sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
 /* --- the color-mix upgrade -------------------------------------------- */
@@ -293,7 +306,7 @@ _CSS = """
     .sqlx-footer { border-top-color: color-mix(in srgb, currentColor 18%, transparent); }
     .sqlx-footer .sqlx-footer-label,
     .sqlx-footer .sqlx-credit,
-    .sqlx-footer a[aria-current] {
+    .sqlx-footer [aria-current] {
         color: color-mix(in srgb, currentColor 58%, transparent);
     }
     .sqlx-footer .sqlx-sep { color: color-mix(in srgb, currentColor 30%, transparent); }
@@ -418,8 +431,9 @@ def figure(svg: str, caption: str | None = None, max_width: int | None = None) -
 # and its comment names all seven. check-footer-nav.sh in the ec2-nginx
 # directory diffs them and exits non-zero when they disagree.
 #
-# Every href is absolute, including this app's own: a Streamlit app is a single
-# page and a relative "/" would reload it rather than go anywhere.
+# Every href is absolute. This app's own entry renders as a span, not a link
+# (see `footer_html`), but its href stays here so check-footer-nav.sh can
+# compare the row.
 SITES = [
     ("www", "Main site", "https://www.dustincremascoli.com/"),
     ("viz", "Data Viz", "https://www.dustincremascoli.com/visualizations"),
@@ -438,6 +452,49 @@ SITES_LABEL = "Everything here"
 CREDIT = "Produced with the aid of Claude Code&#39;s Command Line tools..."
 
 
+# The new-tab cue every outbound link from this app carries (link policy section
+# 3): a visible arrow hidden from assistive tech, plus the words for it. Shared
+# with the sidebar links in app.py.
+NEW_TAB_CUE = (
+    '<span class="sqlx-ext" aria-hidden="true">↗</span>'
+    '<span class="sr-only"> (opens in a new tab)</span>'
+)
+
+
+def footer_html() -> str:
+    """The footer's markup. Pure, so it can be checked without a Streamlit run.
+
+    This app is stateful -- the conversation lives in session memory, not the
+    URL -- so every link out opens a new tab, and the entry for this app itself
+    is a span rather than a link: clicking it would reload the page and wipe the
+    conversation. `aria-current` still marks it as where you are.
+
+    `rel` is "noopener noreferrer" even for the estate's own sites, which would
+    otherwise get "noopener" alone so the weblog can see the Referer: `st.html`
+    forces noreferrer onto every target=_blank link, and `st.markdown` would
+    wrap this list in Streamlit's own markdown spacing. Accepted, per policy.
+    """
+    items = []
+    for i, (key, label, href) in enumerate(SITES):
+        # The separator lives inside the <li>; a <span> as a direct child of a
+        # <ul> is invalid and gets hoisted out of the list.
+        sep = "" if i == len(SITES) - 1 else '<span class="sqlx-sep" aria-hidden="true">·</span>'
+        if key == SITES_CURRENT:
+            entry = f'<span aria-current="page">{html.escape(label)}</span>'
+        else:
+            entry = (
+                f'<a href="{href}" target="_blank" rel="noopener noreferrer">'
+                f"{html.escape(label)}{NEW_TAB_CUE}</a>"
+            )
+        items.append(f"<li>{entry}{sep}</li>")
+    return (
+        '<div class="sqlx-footer"><nav aria-label="Site">'
+        f'<p class="sqlx-footer-label">{SITES_LABEL}</p>'
+        f'<ul>{"".join(items)}</ul></nav>'
+        f'<p class="sqlx-credit">{CREDIT}</p></div>'
+    )
+
+
 def footer() -> None:
     """The site-wide footer. Call once, last, from the main body.
 
@@ -450,27 +507,7 @@ def footer() -> None:
     DOMPurify's html profile keeps every element used here. See `figure` for the
     one case -- SVG -- where that profile is the wrong choice.
     """
-    items = []
-    for i, (key, label, href) in enumerate(SITES):
-        current = key == SITES_CURRENT
-        mark = ' aria-current="page"' if current else ""
-        # The separator lives inside the <li>; a <span> as a direct child of a
-        # <ul> is invalid and gets hoisted out of the list.
-        sep = "" if i == len(SITES) - 1 else '<span class="sqlx-sep" aria-hidden="true">·</span>'
-        # Off-site links open in a new tab; the entry for THIS app does not --
-        # a new tab holding a second copy of the app you are already in is the
-        # one outcome nobody clicking it wants.
-        tab = "" if current else ' target="_blank" rel="noopener noreferrer"'
-        items.append(
-            f'<li><a href="{href}"{mark}{tab}>'
-            f"{html.escape(label)}</a>{sep}</li>"
-        )
-    st.html(
-        '<div class="sqlx-footer"><nav aria-label="Site">'
-        f'<p class="sqlx-footer-label">{SITES_LABEL}</p>'
-        f'<ul>{"".join(items)}</ul></nav>'
-        f'<p class="sqlx-credit">{CREDIT}</p></div>'
-    )
+    st.html(footer_html())
 
 
 def prose(markdown: str, key: str) -> None:
