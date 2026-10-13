@@ -23,6 +23,8 @@ Group=sqlxapp
 WorkingDirectory=/opt/sql-explorer
 
 Environment=SQLX_MCP_URL=http://127.0.0.1:8770/mcp
+# The default model. An SQLX_MODEL in app.env overrides it (EnvironmentFile wins
+# over Environment=), so switching models needs no unit change. See llm.py.
 Environment=SQLX_MODEL=gemini-3.8-flash
 Environment=SQLX_PORT=8503
 # The daily token ledger. Must be on disk and writable by this user: it is what
@@ -48,7 +50,7 @@ Environment=PYTHONUNBUFFERED=1
 # (weather-mcp.service needs none of this -- it never looks at HOME.)
 Environment=HOME=/var/lib/sql-explorer
 
-# Holds only GOOGLE_API_KEY. Mode 640 root:sqlxapp. This user deliberately
+# Holds only the model API keys, an optional SQLX_MODEL and the spend caps. Mode 640 root:sqlxapp. This user deliberately
 # cannot read /etc/weather-mcp/mcp.env — see that unit's header.
 EnvironmentFile=/etc/sql-explorer/app.env
 

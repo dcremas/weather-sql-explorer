@@ -1,7 +1,7 @@
 # Weather Warehouse SQL Explorer
 
 **Ask a weather question in English; get PostgreSQL, a chart, and the rows.**
-Gemini 3.8 Flash writes the SQL, a Model Context Protocol server executes it as a
+Gemini 3.8 Flash (or another model, see §4) writes the SQL, a Model Context Protocol server executes it as a
 read-only role, and the query is shown next to the answer. Built 2026-08-20.
 
 The web tier holds **no database credentials and builds no SQL**. Everything goes
@@ -12,7 +12,7 @@ the warehouse at risk — it was never trusted with it.
 browser
   → nginx                TLS, per-IP rate limit
     → Streamlit           127.0.0.1:8503   this app
-      → LangChain agent   Gemini 3.8 Flash
+      → LangChain agent   Gemini 3.8 Flash by default (SQLX_MODEL, llm.py)
         → MCP server      127.0.0.1:8770   ../mcp_server, 3 of its 13 tools
           → Postgres      mcp_ro, SELECT on 10 tables, read-only txn, 30s timeout
 ```
@@ -74,7 +74,7 @@ First-time setup:
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
-cp .env.example .env && chmod 600 .env    # then fill in GOOGLE_API_KEY
+cp .env.example .env && chmod 600 .env    # then fill in the key for SQLX_MODEL's provider
 ```
 
 ---
@@ -144,7 +144,85 @@ only role available is deliberately read-only). **It fails closed** — an
 unreadable ledger pauses questions rather than assuming budget remains.
 
 Failed questions are charged. A crashed or looping run still spent tokens, and
-exempting failures is a hole in the cap.
+exempting failures is a hole in the cap. The one exception is the provider
+refusing for billing (out of credit, or over a Console spend limit): that bought
+nothing, and charging it would keep the page paused after a top-up.
+
+### Switching models
+
+`SQLX_MODEL` names the model and `llm.py` turns it into a chat model. A bare
+`gemini-*` or `claude-*` name works as it always has; anything else is
+`provider:model`:
+
+| Provider | Setting | Key |
+|---|---|---|
+| Google (default) | `gemini-3.8-flash` | `GOOGLE_API_KEY` |
+| Anthropic | `claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai:gpt-6-astra` | `OPENAI_API_KEY` |
+| OpenRouter (one key, most models) | `openrouter:qwen/qwen3.8-max` | `OPENROUTER_API_KEY` |
+| DeepSeek | `deepseek:deepseek-flash` | `DEEPSEEK_API_KEY` |
+| Qwen (Alibaba, international) | `qwen:<model>` | `DASHSCOPE_API_KEY` |
+| Kimi (Moonshot) | `kimi:kimi-k3` | `MOONSHOT_API_KEY` |
+| Mistral | `mistral:<model>` | `MISTRAL_API_KEY` |
+| Together / Groq / Fireworks | `together:<model>` etc. | `TOGETHER_API_KEY` etc. |
+
+Each provider reads its own key, so any number can sit in the env file and a
+switch is one line:
+
+```bash
+# on the box: app.env overrides the unit's default, so no redeploy is needed
+sudo vi /etc/sql-explorer/app.env      # e.g. ANTHROPIC_API_KEY=... and SQLX_MODEL=claude-sonnet-5-5
+sudo systemctl restart sql-explorer
+```
+
+- **Nothing changes until the setting does.** Each provider's package is
+  imported only when chosen, so the default path is the same code it always was.
+- **`llm.py` has an identical twin** in the football explorer
+  (`~/projects/pbp/explorer/llm.py`). Keep them in step by hand.
+- **A Claude key is an API key from platform.claude.com.** A claude.ai Team or
+  Pro plan does not include API access.
+- **What each provider is sent.** Gemini: `temperature=0`, `low` effort. Claude:
+  no temperature (current models reject one; Haiku 4.5 keeps `0`), `low` effort,
+  refusal fallbacks, prompt caching. OpenAI: `low` effort on its reasoning
+  models, and the library picks the Responses API where a model needs it. Every
+  other provider: nothing optional -- untested parameters are where a 400 comes
+  from, so they get their own defaults.
+- **Outages are recognised for all of them** (`llm.refusal`): rate limits and
+  overload say "try again in a minute"; an empty balance or spend limit says
+  answers are paused, and is not charged.
+- **Re-check the caps after a switch.** The measurements above are Gemini's.
+  The ledger counts tokens and a token does not cost the same everywhere. Ask
+  the Denver example before and after and compare.
+- **Chinese-hosted endpoints.** `deepseek:`, `qwen:` and `kimi:` send visitors'
+  questions to servers in China. The same open-weight models are on Together,
+  Groq, Fireworks and OpenRouter if that matters.
+
+### Comparing models: the test set
+
+`eval/` holds 15 questions with answers computed from the warehouse on 2026-10-12,
+each aimed at a known trap -- Fahrenheit treated as Celsius, `loc_subset`'s row per
+year, hours counted as days, a place the warehouse does not cover. `eval/run_eval.py`
+asks them through the app's own `agent.ask` and grades the answer text:
+
+```bash
+.venv/bin/python eval/run_eval.py gemini-3.8-flash claude-sonnet-5-5          # plan + cost ceiling, sends nothing
+.venv/bin/python eval/run_eval.py gemini-3.8-flash claude-sonnet-5-5 --yes    # spends money
+```
+
+Needs the MCP server running and each model's key. It never touches the live
+ledger. Results land in `eval/results/<timestamp>/report.md` (gitignored), with
+every failed answer and its SQL in full -- read those before trusting a
+percentage. Prices for the cost column are in `eval/prices.json`. `run_eval.py`
+is a twin of the football explorer's; keep them in step. `provision.sh` leaves
+`eval/` off the box.
+
+**Rainfall was wrong until 2026-10-12.** The synoptic (FM-12) rows carried
+overlapping multi-hour totals, so summing `prp` counted the same rain two or
+three times (Seattle 2022: 89.8 inches against 40.98 official). The fix is in
+`~/projects/WeatherData` (README, *Precipitation double counting*) and is applied
+to the serving warehouse; the three rainfall questions here were measured after
+it. A few stations are still wrong upstream -- Little Rock AFB, Shreveport 2025,
+Duluth 2025 -- and the test set avoids them.
 
 ---
 
@@ -270,9 +348,11 @@ sql_explorer/
                        ../../check-footer-nav.sh after touching it)
   guide.py             the "How it works" explainer — see §0
   data_model.py        the "Data model" schema reference, read live — see §0
-  agent.py             MCP client + Gemini + the background event loop.
+  agent.py             MCP client + the agent + the background event loop.
                        `call_tool` reaches MCP with no model in the path,
                        which is how data_model.py reads the schema for free
+  llm.py               SQLX_MODEL -> chat model, for every provider; twin of
+                       ~/projects/pbp/explorer/llm.py
   budget.py            the spend caps and the flock'd daily ledger
   charts.py            whether to chart an arbitrary result set, and how
   theme.py             the validated Plotly palette (charts only now)

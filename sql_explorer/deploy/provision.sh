@@ -86,7 +86,7 @@ install_tree() {
     # runtime state living inside it.
     rsync -a --delete \
           --exclude '.venv/' --exclude '__pycache__/' --exclude '.env' \
-          --exclude '.budget.json' \
+          --exclude '.budget.json' --exclude 'eval/' \
           "$src/" "$dest/"
     chown -R "$owner:$owner" "$dest"
     echo "   $dest"
@@ -153,6 +153,13 @@ MCP_DB_PASSWORD="
 make_env /etc/sql-explorer /etc/sql-explorer/app.env sqlxapp \
     "# Google AI Studio key for Gemini.
 GOOGLE_API_KEY=
+# Claude API key (platform.claude.com), read only when SQLX_MODEL is claude-*.
+ANTHROPIC_API_KEY=
+# Any other provider's key goes here too, e.g. OPENAI_API_KEY= -- the full list
+# is in sql_explorer/.env.example and sql_explorer/llm.py.
+# Uncomment to switch models (bare gemini-*/claude-*, or provider:model). This file overrides the unit's Environment= line,
+# so a switch is this line plus a restart of sql-explorer -- no redeploy.
+#SQLX_MODEL=claude-sonnet-5-5
 # Spend caps. Tighter here than the laptop defaults: this endpoint is public.
 SQLX_MAX_SESSION_QUESTIONS=10
 SQLX_MAX_DAILY_TOKENS=1500000"
@@ -296,10 +303,10 @@ echo "Both services are running and reachable on the loopback."
 echo
 
 if ! grep -q '[^[:space:]]' <<<"$(sed -n 's/^MCP_DB_PASSWORD=//p' /etc/weather-mcp/mcp.env)" \
-   || ! grep -q '[^[:space:]]' <<<"$(sed -n 's/^GOOGLE_API_KEY=//p' /etc/sql-explorer/app.env)"; then
+   || ! grep -q '[^[:space:]]' <<<"$(sed -n 's/^[A-Z_]*_API_KEY=//p' /etc/sql-explorer/app.env)"; then
     note "Fill in the empty credential field(s):
        /etc/weather-mcp/mcp.env     MCP_DB_PASSWORD
-       /etc/sql-explorer/app.env    GOOGLE_API_KEY
+       /etc/sql-explorer/app.env    the API key for SQLX_MODEL's provider
      then: systemctl restart weather-mcp sql-explorer"
 fi
 

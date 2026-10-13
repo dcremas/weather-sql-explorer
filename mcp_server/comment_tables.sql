@@ -51,7 +51,15 @@ COMMENT ON COLUMN public.observations.slp IS
     'Not hPa/millibars -- a value near 1013 would be hPa and does not occur here.';
 COMMENT ON COLUMN public.observations.wnd IS 'Wind speed in MILES PER HOUR.';
 COMMENT ON COLUMN public.observations.vis IS 'Visibility in STATUTE MILES.';
-COMMENT ON COLUMN public.observations.prp IS 'Precipitation in INCHES.';
+-- prp changed meaning on 2026-10-12: FM-12 rows no longer carry overlapping
+-- multi-hour totals, so SUM(prp) is now a real total. Kept in step with
+-- WeatherData/sql/fix_precip_double_count.sql, which sets the same comment.
+COMMENT ON COLUMN public.observations.prp IS
+  'Precipitation in INCHES during the hour ending at this report (the METAR '
+  '1-hour amount). Only FM-15 (hourly) rows carry it; FM-12 (synoptic) rows are '
+  'NULL, because their 3-24 hour totals overlap the hourly amounts. SUM(prp) over '
+  'a station''s rows is its precipitation total, within a few percent of NOAA''s '
+  'official GHCN-Daily figures.';
 COMMENT ON COLUMN public.observations.cig IS 'Cloud ceiling height in FEET.';
 COMMENT ON COLUMN public.observations.source IS
     'GHCNh source code, 3 digits (223, 343, 413). NOTE: older ISD data used '

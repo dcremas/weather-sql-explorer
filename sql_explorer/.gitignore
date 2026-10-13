@@ -2,3 +2,4 @@
 .budget.json
 .venv/
 __pycache__/
+eval/results/

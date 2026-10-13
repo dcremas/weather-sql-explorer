@@ -1,0 +1,226 @@
+{
+  "about": "Weather SQL Explorer test set. Each expected answer was computed from the warehouse through the read-only MCP path on 2026-10-12, with the reference SQL beside it. Every question uses closed date ranges (nothing from 2026 or the rolling forecast window) so the answers do not drift. The precipitation questions were added after the 2026-10-12 precipitation fix (WeatherData/sql/fix_precip_double_count.sql) reached the serving warehouse; before it, summing prp at Seattle for 2022 gave 89.8 inches against NOAA's official 40.98. Little Rock AFB, Shreveport 2025 and Duluth 2025 are avoided: their rainfall is wrong upstream (see the WeatherData README). Checks run against the answer text a visitor sees; see run_eval.py for what each check type means.",
+  "questions": [
+    {
+      "id": "wx-lax-aug-2024",
+      "question": "What was the average temperature at Los Angeles International Airport in August 2024?",
+      "checks": [
+        {
+          "number": 69.5,
+          "tol": 0.5
+        }
+      ],
+      "trap": "tmp is already Fahrenheit. Converting it from Celsius is how a model once reported 151 F for Los Angeles.",
+      "reference_sql": "SELECT round(avg(tmp)::numeric,2) FROM observations WHERE station='72295023174' AND date >= '2024-08-01' AND date < '2024-09-01'"
+    },
+    {
+      "id": "wx-hottest-2023",
+      "question": "Which station recorded the highest temperature in 2023, and what was it?",
+      "checks": [
+        {
+          "text": [
+            "Phoenix"
+          ]
+        },
+        {
+          "number": 118.9,
+          "tol": 0.2
+        }
+      ],
+      "trap": "Show the station name, not the 11-character id.",
+      "reference_sql": "SELECT s.station_name, max(o.tmp) FROM observations o JOIN (SELECT DISTINCT station, station_name FROM loc_subset) s USING (station) WHERE date >= '2023-01-01' AND date < '2024-01-01' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
+    },
+    {
+      "id": "wx-windiest-state-2024",
+      "question": "Which state had the windiest weather on average in 2024?",
+      "checks": [
+        {
+          "any": [
+            "Hawaii",
+            "HI"
+          ]
+        }
+      ],
+      "trap": "loc_subset has one row per station per YEAR; joining it without DISTINCT or a year filter multiplies rows. Hawaii leads whether averaging all readings or station means.",
+      "reference_sql": "SELECT s.state, round(avg(o.wnd)::numeric,2) FROM observations o JOIN (SELECT DISTINCT station, state FROM loc_subset) s USING (station) WHERE date >= '2024-01-01' AND date < '2025-01-01' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
+    },
+    {
+      "id": "wx-texas-stations",
+      "question": "How many of the weather stations are in Texas?",
+      "checks": [
+        {
+          "number": 5,
+          "tol": 0
+        },
+        {
+          "none": [
+            "40 stations"
+          ]
+        }
+      ],
+      "trap": "Counting loc_subset rows instead of distinct stations gives 40 (8 years x 5).",
+      "reference_sql": "SELECT count(DISTINCT station) FROM loc_subset WHERE state = 'TX'"
+    },
+    {
+      "id": "wx-msp-coldest-2019",
+      "question": "What was the coldest temperature recorded in Minneapolis in 2019?",
+      "checks": [
+        {
+          "number": -27.9,
+          "tol": 0.6,
+          "signless": true
+        }
+      ],
+      "trap": "Already Fahrenheit (the January 2019 polar vortex).",
+      "reference_sql": "SELECT min(tmp) FROM observations WHERE station='72658014922' AND date >= '2019-01-01' AND date < '2020-01-01'"
+    },
+    {
+      "id": "wx-avg-pressure-2024",
+      "question": "What was the average sea-level pressure across all stations in 2024?",
+      "checks": [
+        {
+          "number": 30.0,
+          "tol": 0.05
+        },
+        {
+          "none": [
+            "hPa",
+            "millibar",
+            "mbar"
+          ]
+        }
+      ],
+      "trap": "slp is inches of mercury; a value near 1013 would be hPa and does not occur here.",
+      "reference_sql": "SELECT round(avg(slp)::numeric,3) FROM observations WHERE date >= '2024-01-01' AND date < '2025-01-01'"
+    },
+    {
+      "id": "wx-110-stations-2024",
+      "question": "How many stations recorded a temperature of 110 F or higher in 2024?",
+      "checks": [
+        {
+          "number": 6,
+          "tol": 0
+        }
+      ],
+      "trap": "Count distinct stations, not readings.",
+      "reference_sql": "SELECT count(DISTINCT station) FROM observations WHERE tmp >= 110 AND date >= '2024-01-01' AND date < '2025-01-01'"
+    },
+    {
+      "id": "wx-miami-dew-jul-2023",
+      "question": "What was the average dew point in Miami in July 2023?",
+      "checks": [
+        {
+          "number": 75.4,
+          "tol": 0.5
+        }
+      ],
+      "trap": "dew is already Fahrenheit.",
+      "reference_sql": "SELECT round(avg(dew)::numeric,2) FROM observations WHERE station='72202012839' AND date >= '2023-07-01' AND date < '2023-08-01'"
+    },
+    {
+      "id": "wx-denver-90-days-2024",
+      "question": "On how many days in 2024 did Denver reach 90 F or higher?",
+      "checks": [
+        {
+          "number": 52,
+          "tol": 0
+        }
+      ],
+      "trap": "Count days, not hourly readings.",
+      "reference_sql": "SELECT count(DISTINCT date::date) FROM observations WHERE station='72565003017' AND tmp >= 90 AND date >= '2024-01-01' AND date < '2025-01-01'"
+    },
+    {
+      "id": "wx-phx-vs-lax-2024",
+      "question": "How much warmer was Phoenix than Los Angeles on average in 2024?",
+      "checks": [
+        {
+          "number": 16.8,
+          "tol": 0.3
+        }
+      ],
+      "trap": "Phoenix 78.45 F, LAX 61.68 F; the difference is the answer.",
+      "reference_sql": "SELECT s.station_name, round(avg(tmp)::numeric,2) FROM observations o JOIN (SELECT DISTINCT station, station_name FROM loc_subset) s USING (station) WHERE station IN ('72278023183','72295023174') AND date >= '2024-01-01' AND date < '2025-01-01' GROUP BY 1"
+    },
+    {
+      "id": "wx-lax-max-celsius",
+      "question": "What is the highest temperature ever recorded at LAX, in Celsius?",
+      "checks": [
+        {
+          "number": 38.3,
+          "tol": 0.2
+        }
+      ],
+      "trap": "The one question where a conversion is right: 100.94 F is 38.3 C. Converting in the wrong direction, or treating tmp as Celsius, misses.",
+      "reference_sql": "SELECT max(tmp), round(((max(tmp)-32)*5/9)::numeric,2) FROM observations WHERE station='72295023174'"
+    },
+    {
+      "id": "wx-out-of-scope",
+      "question": "What was the temperature in Paris, France yesterday?",
+      "checks": [
+        {
+          "any": [
+            "not",
+            "no ",
+            "only",
+            "doesn't",
+            "does not",
+            "cannot",
+            "can't",
+            "isn't",
+            "unavailable",
+            "outside"
+          ]
+        },
+        {
+          "none": [
+            "Paris was",
+            "Paris reached"
+          ]
+        }
+      ],
+      "trap": "The warehouse holds 112 US stations. The right answer says so rather than substituting something adjacent.",
+      "reference_sql": null
+    },
+    {
+      "id": "wx-sea-rain-2022",
+      "question": "How much precipitation fell at Seattle-Tacoma in 2022?",
+      "checks": [
+        {
+          "number": 40.9,
+          "tol": 0.3
+        }
+      ],
+      "trap": "SUM(prp) is the total since the 2026-10-12 fix (NOAA's official figure is 40.98 in). Before it the answer was 89.8.",
+      "reference_sql": "SELECT round(sum(prp)::numeric,2) FROM observations WHERE station='72793024233' AND date >= '2022-01-01' AND date < '2023-01-01'"
+    },
+    {
+      "id": "wx-phx-rain-2024",
+      "question": "What was Phoenix's total rainfall in 2024?",
+      "checks": [
+        {
+          "number": 4.54,
+          "tol": 0.1
+        }
+      ],
+      "trap": "Inches, not millimetres; NOAA's official figure is 4.56 in.",
+      "reference_sql": "SELECT round(sum(prp)::numeric,2) FROM observations WHERE station='72278023183' AND date >= '2024-01-01' AND date < '2025-01-01'"
+    },
+    {
+      "id": "wx-sea-wettest-month-2023",
+      "question": "Which month of 2023 was wettest in Seattle, and how much rain fell?",
+      "checks": [
+        {
+          "text": [
+            "December"
+          ]
+        },
+        {
+          "number": 8.6,
+          "tol": 0.1
+        }
+      ],
+      "trap": "Sum per month; November (5.66 in) is second.",
+      "reference_sql": "SELECT extract(month FROM date)::int, round(sum(prp)::numeric,2) FROM observations WHERE station='72793024233' AND date >= '2023-01-01' AND date < '2024-01-01' GROUP BY 1 ORDER BY 2 DESC LIMIT 3"
+    }
+  ]
+}

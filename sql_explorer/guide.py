@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+import agent as agent_module
 import ui
 
 # The worked example, run against the live warehouse on 2026-08-21 -- not a
@@ -84,7 +85,7 @@ _STAGES = [
         "the question, plus what the tables contain",
     ),
     (
-        "Gemini 3.8 Flash",
+        agent_module.MODEL_NAME,
         "the language model — writes one SQL query",
         "a proposed SQL query",
     ),
@@ -120,8 +121,8 @@ def pipeline_svg() -> str:
             height,
             "How a question becomes an answer",
             "Five stages in order: you type a question in a browser; the web app "
-            "adds a description of the tables; Gemini 3.8 Flash writes one SQL "
-            "query; a query checker parses and approves it; PostgreSQL runs it "
+            f"adds a description of the tables; {agent_module.MODEL_NAME} writes one "
+            "SQL query; a query checker parses and approves it; PostgreSQL runs it "
             "read-only. The rows, the chart and the query itself all travel back "
             "to the browser.",
             min_width=470,
@@ -134,7 +135,7 @@ def pipeline_svg() -> str:
         y = top + step * index
         # The model is the one stage a visitor has probably not seen in a
         # pipeline before, so it is the only one that gets the accent.
-        is_model = name.startswith("Gemini")
+        is_model = name == agent_module.MODEL_NAME
         out.append(
             ui.svg_box(
                 left, y, box_w, box_h, cls="sx-box-fact" if is_model else "sx-box"

@@ -5,7 +5,8 @@ and the rows.**
 
 Live demo: **https://sql.dustincremascoli.com**
 
-Gemini 3.8 Flash writes the SQL. A Model Context Protocol server executes it as a
+Gemini 3.8 Flash (or another model — one setting, see `sql_explorer/README.md`
+§4) writes the SQL. A Model Context Protocol server executes it as a
 `SELECT`-only database role. The generated query is shown next to the answer, so
 you can check the machine's work rather than trust it.
 
@@ -20,7 +21,7 @@ The data is 9.2M hourly observations from 112 US weather stations (NOAA GHCNh,
 browser
   └─ nginx                 TLS, per-IP connection limit
      └─ Streamlit          127.0.0.1:8503     sql_explorer/
-        └─ LangChain agent Gemini 3.8 Flash
+        └─ LangChain agent Gemini 3.8 Flash by default (SQLX_MODEL)
            └─ MCP server   127.0.0.1:8770     mcp_server/
               └─ Postgres  mcp_ro — SELECT only, read-only txn, 30s timeout
 ```
@@ -59,7 +60,7 @@ done
 
 # 2. Configure. Neither .env is committed.
 cp mcp_server/.env.example   mcp_server/.env      # database connection
-cp sql_explorer/.env.example sql_explorer/.env    # GOOGLE_API_KEY
+cp sql_explorer/.env.example sql_explorer/.env    # the key for SQLX_MODEL's provider
 chmod 600 mcp_server/.env sql_explorer/.env
 
 # 3. Run the MCP server, then the app, in separate shells.

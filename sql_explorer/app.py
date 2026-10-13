@@ -81,6 +81,7 @@ import budget
 import charts
 import data_model
 import guide
+import llm
 import ui
 
 st.set_page_config(
@@ -117,7 +118,10 @@ STEPS = [
     ),
     (
         "A model writes the query",
-        "Gemini reads the table descriptions, then writes one PostgreSQL SELECT.",
+        (
+            f"{agent_module.MODEL_FAMILY} reads the table descriptions, then writes "
+            "one PostgreSQL SELECT."
+        ),
     ),
     (
         "The database runs it",
@@ -361,6 +365,26 @@ def explain_failure(exc: Exception) -> tuple[str, str | None]:
     raw = str(exc)
     lowered = raw.lower()
 
+    # The provider refusing outright is not the question's fault, so it must not
+    # read as "try rephrasing". Billing refusals are also not charged; see ask().
+    refusal = llm.refusal(exc)
+    if refusal == "billing":
+        return (
+            (
+                "Answers are paused: the language model behind this page is out "
+                "of credit. The Data model tab still works, and the warehouse "
+                "itself is unaffected."
+            ),
+            raw,
+        )
+    if refusal == "rate":
+        return (
+            (
+                "The language model is busy and refused the request as too many "
+                "at once. Try again in a minute."
+            ),
+            raw,
+        )
     if "recursion limit" in lowered or "graph_recursion_limit" in lowered:
         return (
             f"The model used up all {budget.MAX_AGENT_STEPS} steps this demo "

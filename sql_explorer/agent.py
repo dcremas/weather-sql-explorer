@@ -1,10 +1,10 @@
-"""The text-to-SQL agent: Gemini, reached through MCP tools, driven from Streamlit.
+"""The text-to-SQL agent: a language model (Gemini by default), reached through MCP tools, driven from Streamlit.
 
 SHAPE OF THE THING
 ------------------
     Streamlit (sync)
       -> one background asyncio loop, for the app's whole life
-        -> LangChain agent (Gemini 3.8 Flash)
+        -> LangChain agent (SQLX_MODEL, see llm.py; Gemini 3.8 Flash by default)
           -> MCP tools over streamable HTTP to 127.0.0.1:8770
             -> mcp_ro on Postgres, SELECT-only
 
@@ -41,6 +41,15 @@ to the loop that created them, so `asyncio.run(...)` per interaction would build
 a fresh loop each time, strand the previous connections, and eventually raise
 "attached to a different loop". One long-lived loop on a daemon thread, cached
 for the process, keeps the client valid across reruns.
+
+SWITCHING MODELS
+----------------
+SQLX_MODEL names the model, and llm.py turns it into a chat model: a bare
+`gemini-*` or `claude-*` name, or `provider:model` for OpenAI, OpenRouter,
+DeepSeek, Qwen, Kimi, Mistral, Together, Groq or Fireworks. Each provider reads
+its own key, so several can sit in app.env at once and a switch is one line plus
+a restart. llm.py is the only place the providers differ; everything downstream
+reads LangChain's common message shape.
 """
 
 from __future__ import annotations
@@ -54,10 +63,11 @@ from pathlib import Path
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 import budget
+import llm
+from llm import SetupError  # also what app.py catches, as agent_module.SetupError
 
 
 def _load_env() -> None:
@@ -82,7 +92,24 @@ def _load_env() -> None:
 _load_env()
 
 MCP_URL = os.environ.get("SQLX_MCP_URL", "http://127.0.0.1:8770/mcp")
-MODEL = os.environ.get("SQLX_MODEL", "gemini-3.8-flash")
+CHOICE = llm.parse(os.environ.get("SQLX_MODEL", "gemini-3.8-flash"))
+MODEL = CHOICE.model  # the id the provider is sent, shown on the page
+MODEL_FAMILY = CHOICE.family  # "Gemini", "Claude", "Qwen", ... for the page's prose
+MODEL_NAME = CHOICE.name  # what the "How it works" diagram calls the model
+
+# Applied wherever the provider takes an effort (see llm.py). Gemini 3.8 Flash
+# reasons by default and cannot be told not to. Left at its default it spends
+# roughly 78k tokens on the Denver example question against 3.7 Flash's 45k,
+# which at SQLX_MAX_DAILY_TOKENS=1.5M is the difference between ~33 and ~19
+# questions a day, i.e. two visitors exhausting the budget. Measured 2026-09-08,
+# five runs per setting against the live MCP server: low takes it to ~58k
+# without changing the answers. That is most of the gap closed but not all of
+# it -- 3.8 on this workload still costs more than 3.7 did, ~25 questions a day
+# against ~33, and raising the step limit to 28 is part of why: runs that used
+# to be cut off at 20 now finish, and a finished run costs more than a truncated
+# one. It is not a fix for the step limit on its own -- see MAX_AGENT_STEPS in
+# budget.py.
+EFFORT = "low"
 
 # Only the three SQL-shaped tools are exposed, out of the server's thirteen.
 #
@@ -174,10 +201,6 @@ def run_sync(coro, timeout: float = 180.0) -> Any:
 # --------------------------------------------------------------------------- #
 
 
-class SetupError(RuntimeError):
-    """Configuration or connectivity problem, phrased for the operator."""
-
-
 # Discovered once and reused. Tool discovery is a live HTTP call and the client's
 # sessions belong to the loop that created them, so this is deliberately not
 # rebuilt per caller -- see WHY A BACKGROUND EVENT LOOP above.
@@ -190,7 +213,7 @@ async def _discover_tools() -> dict[str, Any]:
 
     Split out of `_build` because the data-model page needs `list_schema` and
     `describe_table` WITHOUT an LLM. Building the model to read a table's columns
-    would make the schema reference depend on GOOGLE_API_KEY being set and on the
+    would make the schema reference depend on an API key being set and on the
     provider being up, neither of which has anything to do with reading
     pg_catalog. Nothing here spends a token.
     """
@@ -248,34 +271,17 @@ def call_tool(name: str, arguments: dict | None = None, timeout: float = 45.0) -
 
 
 async def _build() -> tuple[Any, list[str]]:
-    if not os.environ.get("GOOGLE_API_KEY"):
-        raise SetupError(
-            "GOOGLE_API_KEY is not set. Put it in sql_explorer/.env "
-            "(see .env.example) or export it before starting Streamlit."
-        )
-
-    tools = await _discover_tools()
-
-    llm = ChatGoogleGenerativeAI(
-        model=MODEL,
-        temperature=0,  # SQL generation: same question, same query.
-        max_retries=2,
-        # 3.8 Flash reasons by default and cannot be told not to -- the API
-        # accepts low/medium/high and rejects "minimal". Left at its default it
-        # spends roughly 78k tokens on the Denver example question against 3.7
-        # Flash's 45k, which at SQLX_MAX_DAILY_TOKENS=1.5M is the difference
-        # between ~33 and ~19 questions a day, i.e. two visitors exhausting the
-        # budget. Measured 2026-09-08, five runs per setting against the live
-        # MCP server: low takes it to ~58k without changing the answers. That
-        # is most of the gap closed but not all of it -- 3.8 on this workload
-        # still costs more than 3.7 did, ~25 questions a day against ~33, and
-        # raising the step limit to 28 is part of why: runs that used to be cut
-        # off at 20 now finish, and a finished run costs more than a truncated
-        # one. It is not a fix for the step limit on its own -- see
-        # MAX_AGENT_STEPS in budget.py.
-        reasoning_effort="low",
+    # Before discovery: a missing key needs no network to report.
+    model, middleware = llm.build(
+        CHOICE,
+        effort=EFFORT,
+        where="sql_explorer/.env (see .env.example), or /etc/sql-explorer/app.env "
+        "on the box",
     )
-    agent = create_agent(llm, list(tools.values()), system_prompt=SYSTEM_PROMPT)
+    tools = await _discover_tools()
+    agent = create_agent(
+        model, list(tools.values()), system_prompt=SYSTEM_PROMPT, middleware=middleware
+    )
     return agent, list(tools)
 
 
@@ -330,10 +336,13 @@ def ask(agent: Any, question: str, session_questions: int) -> dict:
                 {"recursion_limit": budget.MAX_AGENT_STEPS},
             )
         )
-    except Exception:
+    except Exception as exc:
         # Charge the estimate even on failure: a crashed or looping run still
-        # spent tokens, and exempting failures is a hole in the daily cap.
-        budget.record(charged)
+        # spent tokens, and exempting failures is a hole in the daily cap. The
+        # exception is a BILLING refusal, which bought nothing; charging it lets
+        # an outage fill the ledger until midnight after the credit is topped up.
+        if llm.refusal(exc) != "billing":
+            budget.record(charged)
         raise
 
     messages = result.get("messages", [])
@@ -354,7 +363,8 @@ def ask(agent: Any, question: str, session_questions: int) -> dict:
 def _final_text(messages: list) -> str:
     """The model's closing answer.
 
-    Gemini returns content as a list of parts rather than a plain string, so the
+    Most providers return content as a list of parts (Claude's include
+    thinking blocks, which carry no text) rather than a plain string, so the
     text has to be reassembled; taking `str(content)` renders a Python repr of
     dicts on the page.
     """
