@@ -1,4 +1,4 @@
-# Weather Warehouse SQL Explorer
+# Ask Weather — the weather warehouse SQL explorer
 
 **Ask a weather question in English. Get the PostgreSQL that answers it, a chart,
 and the rows.**

@@ -1,4 +1,4 @@
-# Weather Warehouse SQL Explorer
+# Ask Weather — the weather warehouse SQL explorer
 
 **Ask a weather question in English; get PostgreSQL, a chart, and the rows.**
 Gemini 3.8 Flash (or another model, see §4) writes the SQL, a Model Context Protocol server executes it as a

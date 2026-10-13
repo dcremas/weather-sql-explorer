@@ -157,6 +157,13 @@ you did. Give numbers to one decimal place with their units. Do not paste the SQ
 into your answer -- it is already displayed to the user separately. If the data \
 cannot answer the question, say so plainly rather than substituting something \
 adjacent.
+
+FOLLOW-UPS
+Earlier questions in this conversation may appear before the current one, each \
+with your answer and the SQL behind it. Use them to resolve a follow-up ("what \
+about July?", "now just Texas") by adapting that SQL. Their result rows and \
+tool output are not carried over, so run a fresh query for any number you quote. \
+A question that does not refer back is a new question; ignore the earlier ones.
 """
 
 
@@ -316,20 +323,70 @@ def _tokens_from(messages: list) -> int:
 # still costs something. Deliberately pessimistic.
 UNKNOWN_QUESTION_TOKENS = 20_000
 
+# How much of the visitor's history rides along with a new question, so "what
+# about July?" means something. COMPACT ON PURPOSE: each prior exchange is the
+# question, the written answer and the final SQL -- never the rows, and never
+# the describe_table output, which is thousands of tokens and would be resent on
+# every step of every later question. Three exchanges at these caps is roughly
+# 1k tokens per step.
+CONTEXT_EXCHANGES = 3
+_CONTEXT_ANSWER_CHARS = 800
+_CONTEXT_SQL_CHARS = 1500
 
-def ask(agent: Any, question: str, session_questions: int) -> dict:
+# What _final_text returns when the model wrote nothing. Named so _prior_turns
+# can leave it out: it is the page talking, not the model.
+NO_ANSWER = "The model returned no answer. Try rephrasing the question."
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit].rstrip() + " …"
+
+
+def _prior_turns(history: list[dict] | None) -> list[dict]:
+    """The visitor's recent exchanges as chat messages, oldest first.
+
+    History comes from the page's session state, which is per visitor, so this
+    carries context without a checkpointer on the agent -- the agent is shared
+    across every visitor in the process, and a checkpointer keyed wrongly would
+    hand one visitor's conversation to another. Failed exchanges are skipped:
+    their "answer" is the page's error text, not something the model said.
+    """
+    turns: list[dict] = []
+    usable = [
+        h
+        for h in (history or [])
+        if not h.get("failed") and h.get("answer") not in (None, "", NO_ANSWER)
+    ]
+    for exchange in usable[:CONTEXT_EXCHANGES]:  # history is newest-first
+        reply = _clip(exchange["answer"].strip(), _CONTEXT_ANSWER_CHARS)
+        ran = [q for q in exchange.get("queries") or [] if not q.get("error")]
+        sql = (ran[-1].get("requested_sql") or "").strip() if ran else ""
+        if sql:
+            reply += f"\n\nSQL that produced this:\n{_clip(sql, _CONTEXT_SQL_CHARS)}"
+        turns[:0] = [
+            {"role": "user", "content": exchange["question"]},
+            {"role": "assistant", "content": reply},
+        ]
+    return turns
+
+
+def ask(
+    agent: Any, question: str, session_questions: int, history: list[dict] | None = None
+) -> dict:
     """Answer one question. Raises budget.BudgetExceeded before spending anything.
 
-    Returns the answer text, every SQL statement the agent ran with its result,
-    and the token count charged.
+    `history` is the page's own list of earlier exchanges, newest first; see
+    `_prior_turns`. Returns the answer text, every SQL statement the agent ran
+    with its result, and the token count charged.
     """
     budget.check_can_spend(session_questions)
+    prior = _prior_turns(history)
 
     charged = UNKNOWN_QUESTION_TOKENS
     try:
         result = run_sync(
             agent.ainvoke(
-                {"messages": [{"role": "user", "content": question}]},
+                {"messages": [*prior, {"role": "user", "content": question}]},
                 # Hard stop on the tool-call loop. An agent retrying a failing
                 # query is the expensive failure mode and a question count
                 # cannot see it.
@@ -345,7 +402,10 @@ def ask(agent: Any, question: str, session_questions: int) -> dict:
             budget.record(charged)
         raise
 
-    messages = result.get("messages", [])
+    # This turn only. The result echoes the prior turns back first, and without
+    # the slice a turn that ends with no text would report the PREVIOUS answer
+    # as this one's.
+    messages = result.get("messages", [])[len(prior) :]
     measured = _tokens_from(messages)
     charged = measured or UNKNOWN_QUESTION_TOKENS
     ledger = budget.record(charged)
@@ -385,7 +445,7 @@ def _final_text(messages: list) -> str:
             joined = "\n".join(p for p in parts if p).strip()
             if joined:
                 return joined
-    return "The model returned no answer. Try rephrasing the question."
+    return NO_ANSWER
 
 
 def extract_queries(messages: list) -> list[dict]:

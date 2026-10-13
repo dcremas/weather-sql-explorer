@@ -1,4 +1,4 @@
-"""Weather Warehouse SQL Explorer — ask in English, see the SQL, see the data.
+"""Ask Weather (the weather SQL explorer) — ask in English, see the SQL, see the data.
 
     ./run.sh                      # local, needs the SSH tunnel + the MCP server
     streamlit run app.py          # if you have already sorted the environment
@@ -85,7 +85,7 @@ import llm
 import ui
 
 st.set_page_config(
-    page_title="Weather Warehouse SQL Explorer",
+    page_title="Ask Weather — Dustin Cremascoli",
     page_icon="🌤️",
     layout="wide",
 )
@@ -274,7 +274,7 @@ def render_sidebar(usage: dict) -> None:
     this information appears.
     """
     with st.sidebar:
-        st.markdown("### 🌤️ SQL Explorer")
+        st.markdown("### 🌤️ Ask Weather")
         st.markdown(
             "A question typed in English becomes a **PostgreSQL** query, runs "
             "against a weather warehouse, and comes back with the query "
@@ -442,7 +442,10 @@ def answer_pending() -> None:
     with st.spinner("Reading the schema, writing SQL, querying the warehouse…"):
         try:
             result = agent_module.ask(
-                active_agent, question, st.session_state.questions
+                active_agent,
+                question,
+                st.session_state.questions,
+                history=st.session_state.history,
             )
             st.session_state.questions += 1
             remember(result)
@@ -461,6 +464,13 @@ def answer_pending() -> None:
                     "queries": [],
                 }
             )
+
+
+def _new_conversation() -> None:
+    # Clears the answers AND the follow-up context, which are the same list -- see
+    # agent._prior_turns. `questions` is deliberately left alone: starting over is
+    # not a way to earn more questions.
+    st.session_state.history = []
 
 
 def render_ask() -> None:
@@ -488,6 +498,14 @@ def render_ask() -> None:
             "identical either way. Reading the query is how you tell.",
         )
         return
+
+    with st.container(horizontal=True, vertical_alignment="center"):
+        st.caption(
+            "Follow-ups can refer back: each question carries your last "
+            f"{agent_module.CONTEXT_EXCHANGES} as context.",
+            width="stretch",
+        )
+        st.button("New conversation", on_click=_new_conversation)
 
     for position, exchange in enumerate(st.session_state.history):
         if position:
@@ -522,7 +540,7 @@ def main() -> None:
     usage = budget.status()
 
     ui.hero(
-        "Weather Warehouse SQL Explorer",
+        "Ask Weather",
         "Ask a weather question in plain English. A language model turns it into "
         "<strong>PostgreSQL</strong>, a read-only server runs it against "
         "<strong>9.2 million hourly observations</strong>, and the query comes "

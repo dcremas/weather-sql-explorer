@@ -423,9 +423,9 @@ def figure(svg: str, caption: str | None = None, max_width: int | None = None) -
 SITES = [
     ("www", "Main site", "https://www.dustincremascoli.com/"),
     ("viz", "Data Viz", "https://www.dustincremascoli.com/visualizations"),
-    ("sql", "SQL Explorer", "https://sql.dustincremascoli.com/"),
+    ("sql", "Ask Weather", "https://sql.dustincremascoli.com/"),
     ("api", "Weather API", "https://api.dustincremascoli.com/docs"),
-    ("pbp", "Football SQL", "https://pbp.dustincremascoli.com/"),
+    ("pbp", "Ask Football", "https://pbp.dustincremascoli.com/"),
     ("plays", "Play Explorer", "https://pbp.dustincremascoli.com/plays/"),
     ("typing", "PromptPace", "https://typing.dustincremascoli.com/"),
     ("recipes", "Recipes", "https://recipes.dustincremascoli.com/"),
