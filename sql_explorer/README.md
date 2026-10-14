@@ -1,7 +1,7 @@
 # Ask Weather — the weather warehouse SQL explorer
 
 **Ask a weather question in English; get PostgreSQL, a chart, and the rows.**
-Gemini 3.8 Flash (or another model, see §4) writes the SQL, a Model Context Protocol server executes it as a
+Gemini 4 Argon (or another model, see §4) writes the SQL, a Model Context Protocol server executes it as a
 read-only role, and the query is shown next to the answer. Built 2026-08-20.
 
 The web tier holds **no database credentials and builds no SQL**. Everything goes
@@ -12,7 +12,7 @@ the warehouse at risk — it was never trusted with it.
 browser
   → nginx                TLS, per-IP rate limit
     → Streamlit           127.0.0.1:8503   this app
-      → LangChain agent   Gemini 3.8 Flash by default (SQLX_MODEL, llm.py)
+      → LangChain agent   Gemini 4 Argon by default (SQLX_MODEL, llm.py)
         → MCP server      127.0.0.1:8770   ../mcp_server, 3 of its 13 tools
           → Postgres      mcp_ro, SELECT on 10 tables, read-only txn, 30s timeout
 ```
@@ -156,7 +156,7 @@ nothing, and charging it would keep the page paused after a top-up.
 
 | Provider | Setting | Key |
 |---|---|---|
-| Google (default) | `gemini-3.8-flash` | `GOOGLE_API_KEY` |
+| Google (default) | `gemini-4-argon` | `GOOGLE_API_KEY` |
 | Anthropic | `claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
 | OpenAI | `openai:gpt-6-astra` | `OPENAI_API_KEY` |
 | OpenRouter (one key, most models) | `openrouter:qwen/qwen3.8-max` | `OPENROUTER_API_KEY` |

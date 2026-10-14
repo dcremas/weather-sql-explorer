@@ -4,7 +4,7 @@ SHAPE OF THE THING
 ------------------
     Streamlit (sync)
       -> one background asyncio loop, for the app's whole life
-        -> LangChain agent (SQLX_MODEL, see llm.py; Gemini 3.8 Flash by default)
+        -> LangChain agent (SQLX_MODEL, see llm.py; Gemini 4 Argon by default)
           -> MCP tools over streamable HTTP to 127.0.0.1:8770
             -> mcp_ro on Postgres, SELECT-only
 
@@ -92,7 +92,7 @@ def _load_env() -> None:
 _load_env()
 
 MCP_URL = os.environ.get("SQLX_MCP_URL", "http://127.0.0.1:8770/mcp")
-CHOICE = llm.parse(os.environ.get("SQLX_MODEL", "gemini-3.8-flash"))
+CHOICE = llm.parse(os.environ.get("SQLX_MODEL", "gemini-4-argon"))
 MODEL = CHOICE.model  # the id the provider is sent, shown on the page
 MODEL_FAMILY = CHOICE.family  # "Gemini", "Claude", "Qwen", ... for the page's prose
 MODEL_NAME = CHOICE.name  # what the "How it works" diagram calls the model

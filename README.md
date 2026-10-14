@@ -5,7 +5,7 @@ and the rows.**
 
 Live demo: **https://sql.dustincremascoli.com**
 
-Gemini 3.8 Flash (or another model — one setting, see `sql_explorer/README.md`
+Gemini 4 Argon (or another model — one setting, see `sql_explorer/README.md`
 §4) writes the SQL. A Model Context Protocol server executes it as a
 `SELECT`-only database role. The generated query is shown next to the answer, so
 you can check the machine's work rather than trust it.
@@ -21,7 +21,7 @@ The data is 9.2M hourly observations from 112 US weather stations (NOAA GHCNh,
 browser
   └─ nginx                 TLS, per-IP connection limit
      └─ Streamlit          127.0.0.1:8503     sql_explorer/
-        └─ LangChain agent Gemini 3.8 Flash by default (SQLX_MODEL)
+        └─ LangChain agent Gemini 4 Argon by default (SQLX_MODEL)
            └─ MCP server   127.0.0.1:8770     mcp_server/
               └─ Postgres  mcp_ro — SELECT only, read-only txn, 30s timeout
 ```

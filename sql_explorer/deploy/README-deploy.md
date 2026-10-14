@@ -41,6 +41,15 @@ cannot be scripted and stays manual.
 
 ```bash
 cd ~/projects/ec2-nginx/weather-sql-explorer
+bash sql_explorer/deploy/push.sh
+```
+
+`push.sh` runs the steps below as one command: it shows a diff of the live unit
+files against the repo, stages the code, compiles it on the box, and runs
+`provision.sh`. By hand, the same thing is:
+
+```bash
+cd ~/projects/ec2-nginx/weather-sql-explorer
 rsync -az --delete --exclude '.venv/' --exclude '__pycache__/' --exclude '.env' \
       --exclude '.budget.json' --exclude '.git/' \
       mcp_server sql_explorer awsvm:/tmp/sqlx-deploy/

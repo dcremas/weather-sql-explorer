@@ -25,7 +25,7 @@ WorkingDirectory=/opt/sql-explorer
 Environment=SQLX_MCP_URL=http://127.0.0.1:8770/mcp
 # The default model. An SQLX_MODEL in app.env overrides it (EnvironmentFile wins
 # over Environment=), so switching models needs no unit change. See llm.py.
-Environment=SQLX_MODEL=gemini-3.8-flash
+Environment=SQLX_MODEL=gemini-4-argon
 Environment=SQLX_PORT=8503
 # The daily token ledger. Must be on disk and writable by this user: it is what
 # survives a restart, and Streamlit restarts often. StateDirectory below creates
