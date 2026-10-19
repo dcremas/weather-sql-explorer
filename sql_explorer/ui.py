@@ -449,7 +449,7 @@ SITES_CURRENT = "sql"
 
 SITES_LABEL = "Everything here"
 
-CREDIT = "Produced with the aid of Claude Code&#39;s Command Line tools..."
+CREDIT = "Produced with the help of Claude Code."
 
 
 # The new-tab cue every outbound link from this app carries (link policy section
