@@ -101,9 +101,13 @@ COMMENT ON TABLE public.regions IS
     'roll stations up geographically.';
 
 -- obs_baro_impact ------------------------------------------------------------
+-- Every warehouse load DROPs and re-CREATEs this table, which discards these
+-- COMMENTs. Since 2026-10-25, WeatherData/sql/analytics_slp_decrease.sql
+-- re-applies this same text on each rebuild; keep the two in step. No row count
+-- in the text: it changes every load.
 COMMENT ON TABLE public.obs_baro_impact IS
     'Derived: per-station sea-level-pressure change over 3, 6 and 24 hours, '
-    '658,650 rows, for the subset of stations the barometric visualisation plots '
+    'for the subset of stations the barometric visualisation plots '
     '(NOT all 112). Rebuilt from observations on every load, so it is a '
     'convenience table -- the same numbers can be computed from observations with '
     'window functions. Deltas are in INCHES OF MERCURY; negative means falling '
