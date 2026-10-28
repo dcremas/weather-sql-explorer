@@ -75,6 +75,7 @@ the ask/answer loop, and should stay that size.
 from __future__ import annotations
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 import agent as agent_module
 import budget
@@ -265,13 +266,18 @@ def render_exchange(exchange: dict) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def render_sidebar(usage: dict) -> None:
+def render_sidebar() -> DeltaGenerator:
     """Standing context: what this is, what it costs, and where the code is.
 
     The sidebar carries the things a visitor needs available but not in the way:
     a one-paragraph orientation, the remaining budget, and the two links. None of
     it competes with the question box, and none of it is the only place any of
     this information appears.
+
+    Drawn FIRST, before the masthead, and the session count is left as a slot for
+    `render_session` to fill after the tabs (see main). Drawn last, as it used to
+    be, the sidebar arrived after everything else and pushed the whole page 300px
+    to the right on desktop: a layout shift of 0.6 on every visit (2026-10-28).
     """
     with st.sidebar:
         st.markdown("### 🌤️ Ask Weather")
@@ -298,16 +304,7 @@ def render_sidebar(usage: dict) -> None:
         )
 
         st.divider()
-        st.markdown("**This session**")
-        asked = st.session_state.questions
-        allowed = budget.MAX_QUESTIONS_PER_SESSION
-        st.progress(min(1.0, asked / allowed) if allowed else 0.0)
-        st.caption(
-            f"{max(0, allowed - asked)} of {allowed} questions left · the shared "
-            "daily budget resets at 00:00 UTC"
-        )
-        if not usage["healthy"]:
-            st.caption("⚠️ The usage ledger is unreadable, so questions are paused.")
+        session = st.container()
 
         st.divider()
         # Explicit anchors, not markdown links: Streamlit would open those in a
@@ -326,6 +323,22 @@ def render_sidebar(usage: dict) -> None:
             "The repo holds both halves: this app, and the MCP server that "
             "executes its SQL."
         )
+    return session
+
+
+def render_session(slot: DeltaGenerator, usage: dict) -> None:
+    """The sidebar's question count, in the slot `render_sidebar` left for it."""
+    with slot:
+        st.markdown("**This session**")
+        asked = st.session_state.questions
+        allowed = budget.MAX_QUESTIONS_PER_SESSION
+        st.progress(min(1.0, asked / allowed) if allowed else 0.0)
+        st.caption(
+            f"{max(0, allowed - asked)} of {allowed} questions left · the shared "
+            "daily budget resets at 00:00 UTC"
+        )
+        if not usage["healthy"]:
+            st.caption("⚠️ The usage ledger is unreadable, so questions are paused.")
 
 
 def render_examples(has_history: bool) -> None:
@@ -539,6 +552,9 @@ def main() -> None:
         # answers over the life of the session.
         st.session_state.next_id = 1
 
+    # Before anything else, so the page never renders without it: see render_sidebar.
+    session_slot = render_sidebar()
+
     # No theme flag anywhere in the presentation layer. ui.py derives every
     # colour from the theme's own text colour in the browser, so a visitor
     # toggling Light/Dark gets correct colours immediately instead of on the next
@@ -568,15 +584,16 @@ def main() -> None:
     ask_tab, how_tab, data_tab = st.tabs(
         ["Ask a question", "How it works", "The data model"]
     )
-    # The sidebar is drawn AFTER the tabs, and in a `finally` so it survives a
-    # failure in one of them.
+    # The sidebar's question count is filled AFTER the tabs, and in a `finally` so
+    # it survives a failure in one of them. The rest of the sidebar was drawn
+    # first, above, so the page doesn't shift sideways when it appears.
     #
-    # Streamlit places sidebar content by the `with st.sidebar:` block, not by
-    # where the call sits in the script, so this costs nothing visually and fixes
-    # a real bug: `st.session_state.questions` is incremented inside the Ask tab,
-    # so a sidebar rendered before the tabs shows the count from BEFORE the
-    # question that was just answered. It read "12 of 12 questions left" on a
-    # page that was already displaying an answer.
+    # Streamlit places sidebar content by its container, not by where the call
+    # sits in the script, so this costs nothing visually and fixes a real bug:
+    # `st.session_state.questions` is incremented inside the Ask tab, so a count
+    # rendered before the tabs shows the number from BEFORE the question that was
+    # just answered. It read "12 of 12 questions left" on a page that was already
+    # displaying an answer.
     try:
         with ask_tab:
             render_ask()
@@ -585,10 +602,10 @@ def main() -> None:
         with data_tab:
             data_model.render()
     finally:
-        render_sidebar(usage)
+        render_session(session_slot, usage)
         # Last thing on the page, and inside the `finally` for the same reason
-        # the sidebar is: a failure in one tab should not cost the visitor the
-        # way out of the app. render_sidebar leaves the main body as the active
+        # the session count is: a failure in one tab should not cost the visitor the
+        # way out of the app. render_session leaves the main body as the active
         # container, so this lands under the tabs, not in the sidebar.
         ui.footer()
 
