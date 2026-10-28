@@ -1,0 +1,21 @@
+/* Linked from Streamlit's index.html by deploy/provision.sh, so it applies before the
+   app's first paint -- unlike ui.py's stylesheet, which arrives through st.html.
+   Streamlit loads st.html's code on demand, and until it lands every st.html element
+   (the stylesheet, the masthead, the step strip) is a 37px placeholder while the tabs
+   below render and are then pushed down: a layout shift of 0.5-1.1 per load
+   (2026-10-28). So the main column stays hidden until ui.py's stylesheet reveals it,
+   and everything appears at once, in place. If that never happens, it shows anyway
+   after 6 seconds. It hides every top-level part of the app view, not just the
+   column: Chrome counts the box around the main area as shifting when the sidebar
+   arrives and pushes it right, even though that box paints nothing; on a phone the
+   sidebar is drawn open for a moment before Streamlit collapses it; and a
+   "Connecting..." spinner shows and goes in a container of its own.
+   provision.sh also preloads the Inter font, so the text doesn't reflow when it
+   lands. */
+[data-testid="stAppViewContainer"] > * {
+  visibility: hidden;
+  animation: sqlx-first-paint 0s linear 6s forwards;
+}
+@keyframes sqlx-first-paint {
+  to { visibility: visible; }
+}

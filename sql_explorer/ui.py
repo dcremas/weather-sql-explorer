@@ -50,6 +50,9 @@ and every selector is one of:
   * exactly two `data-testid` selectors, for the page's top padding and the tab
     bar. Both cosmetic: if a release renames them the rules stop applying and the
     page reverts to Streamlit defaults. Nothing breaks.
+  * and the reveal rule paired with static/first-paint.css, on
+    `stAppViewContainer`. If a release renames it, both rules stop matching
+    together and the page simply loads as it did before 2026-10-28.
 
 If you find yourself reaching for a third testid, check config.toml first.
 
@@ -100,6 +103,12 @@ _CSS = """
    the top of the content above the viewport on every rerun and puts the masthead
    back under this overlay whatever value is set here. See constraint 5 there. */
 [data-testid="stMainBlockContainer"] { padding-top: 4.75rem; }
+
+/* Reveal the page, which static/first-paint.css hides until this stylesheet has
+   arrived, so everything appears together and nothing shifts. */
+[data-testid="stAppViewContainer"] > * {
+  visibility: visible; animation: none;
+}
 
 /* Tab labels are 14px by default; these three tabs are the page's primary
    navigation and read as an afterthought at that size. */

@@ -131,6 +131,18 @@ echo "   mcp: server=${MCP_SRV_VER}  app=${MCP_APP_VER}"
 [[ ${MCP_SRV_VER%%.*} -ge 2 ]] || fail "server venv needs mcp>=2, has ${MCP_SRV_VER}"
 [[ ${MCP_APP_VER%%.*} -lt 2 ]] || fail "app venv needs mcp<2, has ${MCP_APP_VER}"
 
+# Link static/first-paint.css from Streamlit's own index.html, and preload the Inter
+# font: the only way to get either onto the page before the app's first paint (see
+# that file). Re-applied on every run, because a Streamlit upgrade replaces
+# index.html. Streamlit reads it at start, and the service restarts below.
+INDEX=$(/opt/sql-explorer/.venv/bin/python -c 'import os, streamlit; print(os.path.join(os.path.dirname(streamlit.__file__), "static", "index.html"))')
+FIRST_PAINT='<link rel="stylesheet" href="./app/static/first-paint.css"><link rel="preload" as="font" type="font/woff2" crossorigin href="./app/static/fonts/inter-latin-wght-normal.woff2">'
+if ! grep -q 'first-paint.css' "$INDEX"; then
+    sed -i "s#</head>#${FIRST_PAINT}</head>#" "$INDEX"
+fi
+grep -q 'first-paint.css' "$INDEX" || fail "could not link first-paint.css from $INDEX"
+echo "   first-paint.css linked from Streamlit's index.html"
+
 # --- 4. Credentials ----------------------------------------------------------
 # Created empty if absent and NEVER overwritten, so a re-run cannot clobber a
 # working secret. Each is readable only by its own service user.
