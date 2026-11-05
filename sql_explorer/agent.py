@@ -58,6 +58,7 @@ import asyncio
 import json
 import os
 import threading
+import time
 from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
@@ -95,7 +96,6 @@ MCP_URL = os.environ.get("SQLX_MCP_URL", "http://127.0.0.1:8770/mcp")
 CHOICE = llm.parse(os.environ.get("SQLX_MODEL", "gemini-4-argon"))
 MODEL = CHOICE.model  # the id the provider is sent, shown on the page
 MODEL_FAMILY = CHOICE.family  # "Gemini", "Claude", "Qwen", ... for the page's prose
-MODEL_NAME = CHOICE.name  # what the "How it works" diagram calls the model
 
 # Applied wherever the provider takes an effort (see llm.py). Gemini 3.8 Flash
 # reasons by default and cannot be told not to. Left at its default it spends
@@ -123,6 +123,11 @@ EFFORT = "low"
 # per-question cost on a public endpoint.
 EXPOSED_TOOLS = ("list_schema", "describe_table", "run_sql")
 
+# Tools the PAGE calls directly, never offered to the model: data_coverage feeds the
+# scope line over the question box (rows, stations, the newest observation). It is
+# free -- no model in the path -- so it costs the demo nothing to read it live.
+PAGE_TOOLS = ("data_coverage",)
+
 SYSTEM_PROMPT = """\
 You are a data analyst answering questions about a weather warehouse by writing \
 PostgreSQL.
@@ -144,19 +149,68 @@ one row per station per YEAR, so use SELECT DISTINCT when you only want names.
 be joined in one query on `station`. Aggregate each side in a CTE first, then \
 join the CTEs -- joining the raw tables on station alone produces billions of \
 intermediate rows and times out.
-- When you bucket by time, alias the bucket clearly -- `AS year`, `AS month`, \
-`AS day` -- not `AS y`. The chart picks the axis from the column name, so a vague \
-alias costs the user a chart.
+- Observations arrive in batches and usually run a day or more behind real time, \
+and the current year and month are incomplete. A TREND compares complete years \
+(or complete months); if you include the current one, say it is partial.
+- Precipitation (`prp`) is weaker than the other measures: a missing hourly amount \
+is stored as 0.0, so a gauge outage reads as a dry spell. When you total or rank \
+rainfall, say that the totals are as reported by the stations.
 - If run_sql returns `truncated: true`, say so; the result is a partial answer.
 - If a query is rejected or errors, read the message and fix the query. Do not \
 retry the same statement.
 
-STYLE
-Answer in a few sentences. Lead with the finding, not with a description of what \
-you did. Give numbers to one decimal place with their units. Do not paste the SQL \
-into your answer -- it is already displayed to the user separately. If the data \
-cannot answer the question, say so plainly rather than substituting something \
-adjacent.
+THE QUERY, SHAPED FOR A READER
+The result table is shown under your answer and charted from its column names, so \
+shape it for a reader:
+- Alias every column in snake_case that reads as a label once underscores become \
+spaces, with the unit as a suffix: `avg_temp_f`, `max_wind_mph`, `total_precip_in`, \
+`avg_pressure_inhg`, `visibility_mi`, `hours`, `stations`. Express every share as a \
+percentage from 0 to 100, rounded to one decimal, with a `_pct` suffix.
+- Name places, not ids: return `station_name` and `state`, never the bare station \
+code, unless the question asks for it.
+- Bucket time with a clear alias -- `AS year`, `AS month`, `AS day`, `AS hour` -- \
+not `AS y`. The chart picks its axis from the column name, so a vague alias costs \
+the reader a chart.
+- An average travels with its sample: return the number of hours (or days, or \
+stations) it was computed from beside it.
+- A RANKING of stations or states returns no more than 15 rows unless asked, and \
+carries the all-station figure for the same filters as a column (a window \
+aggregate or a scalar subquery) so the reader has a benchmark.
+- Round averages to one decimal and pressure to two.
+
+ANSWER FORMAT -- markdown, exactly these parts, in this order
+1. ONE SENTENCE IN **BOLD** that answers the question directly, with the key \
+number and its unit. This is the headline a busy reader stops at, so it must stand \
+alone: "**Chicago's average July temperature has stayed within 2 °F of 75 °F every \
+year since 2019.**" (an illustration of the form, not a fact to repeat)
+2. TWO TO FOUR BULLETS with the supporting numbers: the runners-up and how far \
+behind, the sample behind an average ("over 8,712 hourly readings"), the high and \
+the low of a trend. Give a change in a temperature in degrees ("up 1.8 °F"), and a \
+change in a percentage in POINTS ("up 3.2 points"), never "up 3.2%" for a change \
+in a rate.
+3. ONE LINE beginning `*Basis:*` that says, in plain words with no column or table \
+names, what was counted and what was left out: the stations, the date range, any \
+partial period, any reading you chose for an ambiguous question.
+4. ONE LINE beginning `Next:` with two or three short follow-up questions a \
+curious reader would ask next, separated by ` | `. Each must be answerable from \
+this warehouse and should go one step further -- another station, a different \
+month, a comparison with the forecast.
+
+RULES FOR THE WORDS
+- STATE ONLY WHAT THE QUERY RETURNED: no records, climate facts or context from \
+memory. A reader checks your answer against the result table under it, and a \
+fact that is not in the table cannot be checked.
+- Write numbers as a reader would: thousands separators (8,712), one decimal for \
+averages, units on everything (°F, mph, inHg, inches, miles, %).
+- Judge, do not just list: "steady", "the windiest of the twelve", "about \
+average" -- but only where the numbers in the table support the word.
+- If the question is ambiguous ("hottest" could mean the highest single reading \
+or the highest average), pick the simpler reading, answer it with one query, and \
+name the reading in the Basis line.
+- If the data cannot answer the question, say so plainly rather than substituting \
+something adjacent.
+- Do not paste the SQL into your answer, and do not describe the steps you took. \
+The page shows the query already.
 
 FOLLOW-UPS
 Earlier questions in this conversation may appear before the current one, each \
@@ -212,6 +266,7 @@ def run_sync(coro, timeout: float = 180.0) -> Any:
 # sessions belong to the loop that created them, so this is deliberately not
 # rebuilt per caller -- see WHY A BACKGROUND EVENT LOOP above.
 _tools_by_name: dict[str, Any] | None = None
+_page_tools: dict[str, Any] = {}
 _client: Any = None
 
 
@@ -224,7 +279,7 @@ async def _discover_tools() -> dict[str, Any]:
     provider being up, neither of which has anything to do with reading
     pg_catalog. Nothing here spends a token.
     """
-    global _tools_by_name, _client
+    global _tools_by_name, _page_tools, _client
     if _tools_by_name is not None:
         return _tools_by_name
 
@@ -254,6 +309,7 @@ async def _discover_tools() -> dict[str, Any]:
 
     _client = client
     _tools_by_name = tools
+    _page_tools = {t.name: t for t in discovered if t.name in PAGE_TOOLS}
     return tools
 
 
@@ -269,12 +325,30 @@ def call_tool(name: str, arguments: dict | None = None, timeout: float = 45.0) -
 
     async def _run() -> Any:
         tools = await _discover_tools()
-        tool = tools.get(name)
+        tool = tools.get(name) or _page_tools.get(name)
         if tool is None:
             raise SetupError(f"The MCP server does not expose {name!r}.")
-        return await tool.ainvoke(arguments or {})
+        # Decoded here, not by each caller: the adapter returns the tool's JSON as a
+        # list of text blocks, never a dict. Ask Football's first build tested
+        # isinstance(payload, dict) on the raw value and its reference card rendered
+        # empty in production with no error anywhere.
+        return _decode(await tool.ainvoke(arguments or {}))
 
     return run_sync(_run(), timeout=timeout)
+
+
+def _decode(content: Any) -> Any:
+    """One MCP tool result as a dict, or the raw text when it is not JSON."""
+    if isinstance(content, dict):
+        return content
+    text = content if isinstance(content, str) else "".join(
+        block.get("text", "") if isinstance(block, dict) else str(block)
+        for block in content or []
+    )
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        return text
 
 
 async def _build() -> tuple[Any, list[str]]:
@@ -370,6 +444,27 @@ def _prior_turns(history: list[dict] | None) -> list[dict]:
     return turns
 
 
+class ModelUnavailable(RuntimeError):
+    """The provider refused the request outright -- out of credit, or rate limited.
+
+    Not a bad question and not a bug, so the page pauses with a plain notice rather
+    than charging the visitor a question per refusal. As in Ask Football, where it
+    was added after the 2026-10-06 credit outage; see `llm.refusal`.
+    """
+
+
+# After a refusal, refuse locally for a while instead of asking again. Process-wide,
+# so one visitor discovering the outage spares the next ones the wait and the error.
+_UNAVAILABLE_FOR = {"billing": 900.0, "rate": 60.0}
+_unavailable_until = 0.0
+_unavailable_kind = ""
+
+
+def model_status() -> str:
+    """'' when questions can be asked, else 'billing' or 'rate' while the cooldown runs."""
+    return _unavailable_kind if time.monotonic() < _unavailable_until else ""
+
+
 def ask(
     agent: Any, question: str, session_questions: int, history: list[dict] | None = None
 ) -> dict:
@@ -377,8 +472,12 @@ def ask(
 
     `history` is the page's own list of earlier exchanges, newest first; see
     `_prior_turns`. Returns the answer text, every SQL statement the agent ran
-    with its result, and the token count charged.
+    with its result, and the token count charged. Raises ModelUnavailable when the
+    provider is refusing requests.
     """
+    global _unavailable_until, _unavailable_kind
+    if model_status():
+        raise ModelUnavailable(_unavailable_kind)
     budget.check_can_spend(session_questions)
     prior = _prior_turns(history)
 
@@ -398,8 +497,13 @@ def ask(
         # spent tokens, and exempting failures is a hole in the daily cap. The
         # exception is a BILLING refusal, which bought nothing; charging it lets
         # an outage fill the ledger until midnight after the credit is topped up.
-        if llm.refusal(exc) != "billing":
+        kind = llm.refusal(exc)
+        if kind != "billing":
             budget.record(charged)
+        if kind:
+            _unavailable_kind = kind
+            _unavailable_until = time.monotonic() + _UNAVAILABLE_FOR[kind]
+            raise ModelUnavailable(kind) from exc
         raise
 
     # This turn only. The result echoes the prior turns back first, and without

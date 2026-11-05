@@ -21,35 +21,41 @@ browser
 
 ## 0. What is on the page
 
-Most visitors arrive from a portfolio link and have never seen a language model
-write SQL. The explanation widens in three steps, and they can stop at any of
-them:
+**Ask Football's layout, since 2026-11-05.** The two apps are the same idea pointed
+at two warehouses, so they read as one: a single 960px column of cards on a dotted
+page, light or dark by the visitor's OS. `style.py` and `estate.py` are copies of
+`~/projects/pbp/explorer/`'s; keep them equal apart from the brand mark and the
+wordmark. Top to bottom:
 
-| Where | What it says | Behind a click? |
-|---|---|---|
-| the hero paragraph | English in, SQL and rows out | no |
-| the four-step strip | the whole pipeline, unfolded, above the question box | no |
-| **How it works** tab | what text-to-SQL is, how it fails, how to check it | one tab |
-| **The data model** tab | every readable table, every column, every unit | one tab |
+| Card | What it holds |
+|---|---|
+| header | wordmark and one sentence: English in, SQL and rows out |
+| **Ask a question** | a scope line read live from `data_coverage` (stations, observations, the newest one), the question box, questions left and today's budget |
+| example chips | six starter questions; a click asks |
+| one card per answer | the answer, the chart, the SQL, the formatted rows, earlier attempts, and **Ask next** chips |
+| **About the data** | six subject tiles, then collapsed: *Good to know* (plain-language caveats, `GOOD_TO_KNOW` in `app.py`), *How answers are made*, and *For SQL readers* (the tables, from `list_schema`) |
+| footer | data credit, source link, the estate row |
 
-Only the tabs are behind a click, and nothing on the landing view is
-collapsible. An explanation a newcomer has to go looking for is one they will not
-read, so the *concept* lives on the landing view and the *detail* lives in a tab.
+Until 2026-11-05 the page had a sidebar, a hero, a four-step strip and three tabs
+(Ask / How it works / The data model), with `ui.py`, `guide.py` and `data_model.py`
+behind them. They are in git history; the entity diagram and the join recipes
+went with `data_model.py`.
 
-**`guide.py`** is the newcomer explainer: a vertical pipeline diagram, one real
-worked example (question → SQL → rows, with live numbers), the 151°F failure from
-§3 told as a warning about trusting fluent output, and what to type. It reads
-nothing and costs nothing.
+**What an answer looks like.** The system prompt (`SYSTEM_PROMPT` in `agent.py`)
+fixes the shape, as Ask Football's does: **a bold one-sentence finding** with its
+unit, two to four bullets (the sample behind an average, changes in degrees or in
+percentage points), a `*Basis:*` line saying in plain words what was counted and
+left out, and a `Next:` line that `app.py` lifts out and renders as Ask next chips.
+The same prompt shapes the query for a reader: snake_case aliases with the unit
+as a suffix (`avg_temp_f`, `max_wind_mph`), names rather than station codes, and an
+all-station benchmark column on rankings. The result table is formatted from those
+names (`_column_config`, labels from `charts.label`): "Avg temp (°F)", 8,712 not
+8712, years without a separator, pressure and rain to two decimals. Only the
+display changes; the CSV download is the raw data.
 
-**`data_model.py`** is the schema reference, and it is **read live from the
-database** through the same `list_schema` and `describe_table` calls the model
-itself makes — so the documentation a visitor reads and the documentation the
-model reads are the same bytes, with no second copy to drift. It draws an entity
-map of the ten tables, lists every column with the `COMMENT` that gives its unit,
-shows the three join shapes worth knowing, and lists all 112 stations so a
-visitor can check a place *before* spending one of their twelve questions on it.
-No model is in that path, so browsing the schema is free and is not charged to
-the ledger.
+None of the About the data card calls the model, so it still works when answers
+are paused. `data_coverage` is a page-only tool (`PAGE_TOOLS` in `agent.py`): the
+page reads it, the model is never offered it.
 
 ---
 
@@ -245,22 +251,31 @@ Two rules worth knowing, both written after seeing the alternative fail:
   first plotted measure once ranked the chart by temperature while the text
   ranked by anomaly.
 
-Never a dual axis. Measures share the y-axis only when their magnitudes are
-within 10×; the rest are dropped from the chart, named on the page, and still in
-the table.
+Never a dual axis. Measures share the y-axis only when they carry the **same
+unit suffix** and their magnitudes are within 10×; the rest are dropped from the
+chart, named on the page, and still in the table. The unit rule came first on Ask
+Football, where a percentage shared an axis with an average in yards; here 75 °F
+and 9 mph are within 10× and were drawn on one scale until 2026-11-05.
+
+A measure with one value on every row (the all-station benchmark the prompt asks
+rankings to carry) is drawn as a dashed reference line, not as a second set of
+identical bars. Axis titles and legend entries come from `charts.label`, the same
+function that names the table's columns.
 
 ---
 
-## 6. Six things that break this app if changed
+## 6. Four things that break this app if changed
 
 1. **`st.plotly_chart(..., theme=None)`.** The default `theme="streamlit"`
    silently repaints figures in Streamlit's palette, discarding `theme.py` and
    the CVD validation those colours were chosen to pass. The chart still looks
-   fine, which is why it keeps coming back.
+   fine, which is why it keeps coming back. `config.toml` deliberately sets no
+   `chartCategoricalColors` (Ask Football's does), so a chart that loses
+   `theme=None` looks wrong at once.
 2. **Explicit `key=` on every chart and table.** Streamlit derives element ids
    from element type plus arguments, so the second answer on the page collided
    with the first and killed it with `StreamlitDuplicateElementId`. Keys are
-   built from a monotonic exchange id, not list position — history is prepended,
+   built from a monotonic answer id, not list position — history is prepended,
    so positions shift and position-based keys would re-key everything on every
    question.
 3. **`@st.cache_resource` on the agent.** Streamlit re-runs the script on every
@@ -268,20 +283,7 @@ the table.
    abandons the previous connection.
 4. **The result table is never collapsed.** It is the accessibility relief for
    the light palette's three sub-3:1 contrast slots (see `theme.py`), as well as
-   the honest view of what the query returned. Tabs are fine — a chart and its
-   table are always in the same one — but a chart with its table folded away is
-   not.
-5. **`st.chat_input` lives inside the Ask tab, not the main body.** This looks
-   backwards: from the main body Streamlit pins the box to the bottom of the
-   window, which is nicer. It also wraps the whole main area in
-   `stAppScrollToBottomContainer` and scrolls it to the bottom on every rerun, so
-   the masthead and the four-step strip sit above the viewport from the first
-   paint and get painted over by the 56px `stHeader` overlay. The page title
-   renders legibly half-erased. That is §0 undone for the sake of a pinned input,
-   so the pin was what went.
-6. **History is prepended, newest first.** That follows from 5: the question box
-   is at the top of the Ask tab, so the answer belongs directly beneath it. If
-   the input ever moves back to the bottom of the page, this has to flip with it.
+   the honest view of what the query returned.
 
 ---
 
@@ -310,27 +312,19 @@ person does not have to bisect them again.
 **`st.html` deletes SVG.** Streamlit sanitises both `st.html` and
 `st.markdown(unsafe_allow_html=True)` with DOMPurify, but `st.html` runs it with
 `USE_PROFILES: {html: true}` — a profile that does not include SVG. Every
-`<svg>` element is removed. The wrapper div renders, the caption renders, and the
-diagram is simply gone. Both diagrams therefore go through `ui.figure`, which
-uses markdown. `<style>` blocks and plain divs survive the html profile, so
-everything else in `ui.py` can keep using `st.html`.
+`<svg>` element is removed, silently. The brand mark and the footer's new-tab icon
+are therefore CSS data-URIs (`style.py`, `estate.py`).
 
 **A tag name in a CSS comment deletes the whole stylesheet.** A `<style>` element
 whose text contains something that parses as a tag is discarded *wholesale* — not
 the offending line, the element. Two words in two CSS comments, naming which HTML
-elements a rule applied to, silently removed all 9KB of `ui.py`'s styling and the
-page rendered as unstyled markup. Write element names as bare words.
+elements a rule applied to, once silently removed all 9KB of this app's styling.
+Write element names as bare words.
 
-**Theme is a server-side snapshot, and switching it does not rerun.**
-`theme.is_dark()` reads `st.context.theme.type`, which is a value from the last
-script run. A visitor switching Light/Dark in Streamlit's own menu repaints the
-chrome in the browser *without* triggering a rerun — so an earlier version of
-`ui.py`, which baked matching hex values into its stylesheet and its SVG, left
-near-black text on a near-black background until some later interaction happened
-to rerun the script. `ui.py` now derives every colour in the browser from
-`currentColor` and `color-mix`, and takes no theme argument at all. `charts.py`
-still reads the snapshot, which is why a Plotly figure lags a theme switch by one
-interaction.
+**Theme is a server-side snapshot.** `theme.is_dark()` reads
+`st.context.theme.type`, a value from the last script run. The page's own colours
+follow the visitor's OS through a media query in `style.py`, so they switch at
+once; a Plotly figure follows on the next rerun.
 
 ---
 
@@ -338,23 +332,23 @@ interaction.
 
 ```
 sql_explorer/
-  app.py               Streamlit page and the ask/answer loop; the six
-                       constraints in §6 live in its docstring
-  ui.py                the stylesheet and the SVG primitives; knows nothing
-                       about which colour mode the page is in, on purpose.
-                       Also holds `SITES` -- one of seven copies of the
+  app.py               the page, top to bottom, and the ask/answer loop; the
+                       four constraints in §6 live in its docstring
+  style.py             the stylesheet, the header, notices; a copy of Ask
+                       Football's (~/projects/pbp/explorer/style.py)
+  estate.py            the footer. Holds `SITES` -- one copy of the
                        estate-wide footer row (canonical:
                        ../../prosite_flask/content.py; run
                        ../../check-footer-nav.sh after touching it)
-  guide.py             the "How it works" explainer — see §0
-  data_model.py        the "Data model" schema reference, read live — see §0
   agent.py             MCP client + the agent + the background event loop.
                        `call_tool` reaches MCP with no model in the path,
-                       which is how data_model.py reads the schema for free
+                       which is how the page reads the schema and the
+                       coverage for free
   llm.py               SQLX_MODEL -> chat model, for every provider; twin of
                        play-by-play's explorer/llm.py
   budget.py            the spend caps and the flock'd daily ledger
-  charts.py            whether to chart an arbitrary result set, and how
+  charts.py            whether to chart an arbitrary result set, and how;
+                       `label` names columns for the chart and the table
   theme.py             the validated Plotly palette (charts only now)
   .streamlit/
     config.toml        theme tokens for both colour modes; the supported route

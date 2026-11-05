@@ -1,0 +1,279 @@
+"""The page's look: Ask Football's, which is PromptPace's carried into Streamlit.
+
+Copied from ~/projects/pbp/explorer/style.py on 2026-11-05, when Ask Weather took Ask
+Football's layout so the two read as one app pointed at two warehouses. Keep the two
+files equal apart from the brand mark and the wordmark; a change to one belongs in both.
+
+The palette, the type, the cards and the footer are lifted from
+~/projects/typing/app/static/styles.css so the two apps read as one estate. Colours that
+Streamlit itself draws -- buttons, inputs, the segmented control, charts -- come from
+.streamlit/config.toml, and the values here must stay equal to those.
+
+HOW THE CSS FINDS THINGS
+------------------------
+Streamlit's generated class names change between releases; these two hooks do not:
+  * data-testid attributes, which Streamlit keeps stable for its own tests;
+  * `st-key-<key>` classes, which any container given `key=` carries. Every card on the
+    page is `st.container(key="card-...")`, so `[class*="st-key-card"]` is "a card".
+
+DARK MODE follows the visitor's OS, as PromptPace's does. config.toml defines both themes
+and toolbarMode="minimal" hides the menu that could override the OS, so the media query
+below and Streamlit's own choice cannot disagree.
+"""
+from __future__ import annotations
+
+import html
+
+import streamlit as st
+
+_CSS = """
+<style>
+:root {
+  --pp-surface: #fcfcfb; --pp-surface-2: #f0efec; --pp-border: #e2e0da;
+  --pp-text: #0b0b0b; --pp-text-2: #52514e; --pp-muted: #74726c;
+  --pp-accent: #0b6bcb; --pp-accent-ink: #0956a8; --pp-accent-soft: rgb(11 107 203 / .10);
+  --pp-series-2: #eb6834; --pp-dot: rgb(0 0 0 / .055);
+  --pp-live: #16a34a; --pp-live-halo: rgb(22 163 74 / .20);
+  --pp-warn: #9a6700; --pp-warn-bg: rgb(250 178 25 / .14);
+  --pp-danger: #d03b3b; --pp-danger-bg: rgb(208 59 59 / .08);
+  --pp-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --pp-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 4px 16px rgb(0 0 0 / .04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pp-surface: #1a1a19; --pp-surface-2: #232321; --pp-border: #2e2e2b;
+    --pp-text: #ffffff; --pp-text-2: #c3c2b7; --pp-muted: #93928a;
+    --pp-accent: #61a8ff; --pp-accent-ink: #8cc0ff; --pp-accent-soft: rgb(97 168 255 / .16);
+    --pp-series-2: #d95926; --pp-dot: rgb(255 255 255 / .045);
+    --pp-live: #34d399; --pp-live-halo: rgb(52 211 153 / .22);
+    --pp-warn: #fab219; --pp-warn-bg: rgb(250 178 25 / .12);
+    --pp-danger: #e66767; --pp-danger-bg: rgb(230 103 103 / .12);
+    --pp-shadow: none;
+  }
+}
+
+/* ---- the frame: no Streamlit chrome, a dotted page, a 960px column ---- */
+header[data-testid="stHeader"], [data-testid="stDecoration"], [data-testid="stToolbar"],
+[data-testid="stStatusWidget"] { display: none !important; }
+[data-testid="stApp"] {
+  background-image: radial-gradient(var(--pp-dot) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+[data-testid="stApp"]::before {
+  content: ""; position: fixed; inset: 0 0 auto 0; height: 4px; z-index: 999990;
+  background: linear-gradient(90deg, var(--pp-accent) 0 60%, var(--pp-series-2));
+}
+[data-testid="stMainBlockContainer"] { max-width: 960px; padding: 2.25rem 1rem 0; }
+
+/* ---- header ---- */
+.pp-brand { display: flex; align-items: center; gap: 10px; margin: 0; padding: 0; }
+.pp-brand::before { content: ""; width: 40px; height: 40px; flex: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6bcb'/%3E%3Cg fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12.5 6.5v1.6M6.6 9l1.1 1.1M18.4 9l-1.1 1.1M4.5 14.5h1.6' stroke-width='1.6'/%3E%3Cpath d='M8.7 15.4a4 4 0 1 1 7.1-3.6' stroke-width='1.8'/%3E%3Cpath d='M11.5 24.5h10.3a4 4 0 0 0 .5-7.97 5.6 5.6 0 0 0-10.7 1.4 3.3 3.3 0 0 0-.1 6.57z' stroke-width='2'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat; }
+.pp-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.pp-wordmark { font-size: 1.75rem; font-weight: 750; letter-spacing: -.02em; color: var(--pp-text); }
+.pp-wordmark span { color: var(--pp-accent); }
+.pp-brand-text small { font-size: .8rem; font-weight: 500; color: var(--pp-muted); margin-top: 3px; }
+.pp-tagline { margin: 14px 0 6px; color: var(--pp-text-2); font-size: 1rem; }
+/* The main site's leader line (2026-10-12): a hairline fading from the border
+   colour into the accent, under the header and after each card's eyebrow. */
+.pp-tagline::after {
+  content: ""; display: block; height: 1px; margin-top: 20px;
+  background: linear-gradient(to right, var(--pp-border), var(--pp-accent));
+}
+.pp-eyebrow::after {
+  content: ""; flex: 1 1 1.5rem; height: 1px;
+  background: linear-gradient(to right, var(--pp-border), var(--pp-accent));
+}
+
+/* ---- cards ---- */
+[class*="st-key-card"] {
+  background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: 14px;
+  box-shadow: var(--pp-shadow); padding: 20px;
+}
+.pp-eyebrow {
+  margin: 0; font-size: .8rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--pp-muted); display: flex; align-items: center; gap: 10px;
+}
+.pp-chip {
+  text-transform: none; letter-spacing: 0; font-weight: 600; font-size: .8rem;
+  color: var(--pp-accent-ink); background: var(--pp-accent-soft); border-radius: 999px;
+  padding: 2px 10px;
+}
+.pp-scope { margin: 2px 0 0; color: var(--pp-text-2); font-size: .9rem; }
+.pp-scope b { color: var(--pp-text); font-weight: 600; }
+.pp-question { margin: 6px 0 0; font-size: 1.3rem; font-weight: 550; line-height: 1.4;
+  color: var(--pp-text); text-wrap: balance; }
+.pp-meta { margin: 0; color: var(--pp-muted); font-size: .8rem; }
+.pp-meta b { font-family: var(--pp-mono); font-weight: 600; color: var(--pp-text-2);
+  font-variant-numeric: tabular-nums; }
+.pp-status { display: inline-block; color: var(--pp-text-2); font-size: .875rem; line-height: 1.5; }
+.pp-status::before { content: ""; display: inline-block; vertical-align: 1px; margin-right: 8px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--pp-live); box-shadow: 0 0 0 3px var(--pp-live-halo); }
+.pp-status[data-state="paused"]::before { background: var(--pp-warn); box-shadow: none; }
+.pp-status b { font-family: var(--pp-mono); font-weight: 600; color: var(--pp-text);
+  font-variant-numeric: tabular-nums; }
+.pp-label { margin: 18px 0 6px; font-size: .75rem; font-weight: 650; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--pp-muted); }
+
+/* ---- notices (in place of Streamlit's coloured alert boxes) ---- */
+.pp-notice { margin: 0; padding: 12px 16px; border-radius: 10px; font-size: .925rem;
+  line-height: 1.5; color: var(--pp-text-2); background: var(--pp-surface-2);
+  border: 1px solid var(--pp-border); }
+.pp-notice b { color: var(--pp-text); }
+.pp-notice[data-tone="warn"] { background: var(--pp-warn-bg); border-color: transparent; }
+.pp-notice[data-tone="error"] { background: var(--pp-danger-bg); border-color: transparent; }
+
+/* ---- the ask box ---- */
+/* The question box is a text area so a long question wraps instead of scrolling sideways
+   under Streamlit's "Press Enter to submit form" hint, which a padded single-line input
+   overlapped. The hint is hidden: _ASK_JS makes plain Enter submit, so its "⌘+Enter" would
+   be wrong, and maxlength still stops typing at 400. */
+.st-key-card-ask [data-testid="stTextArea"] textarea { font-size: 1.1rem; line-height: 1.45;
+  padding: 12px 14px; min-height: 0; resize: none; overflow-y: hidden; }
+.st-key-card-ask [data-testid="stTextArea"] [data-baseweb="textarea"] { height: auto !important; }
+.st-key-card-ask [data-testid="InputInstructions"] { display: none; }
+/* Streamlit hides an st.html that is only a stylesheet, but not one that also carries a
+   script, and the empty element then takes a flex gap above the header. (No angle brackets
+   in these comments: the sanitiser st.html runs reads them as tags and drops the sheet.) */
+[data-testid="stElementContainer"]:has(> [data-testid="stHtml"] > script) { display: none; }
+.st-key-card-ask [data-testid="stForm"] { border: 0; padding: 0; }
+.st-key-card-ask [data-testid="stFormSubmitButton"] button { padding: 9px 20px; font-weight: 600; }
+
+/* Example chips: a long question wraps inside its chip rather than ending in an ellipsis,
+   which on a phone cut every one of them off mid-word. */
+[class*="st-key-ex-"] button { height: auto; max-width: 100%; text-align: left; }
+[class*="st-key-ex-"] button * { white-space: normal !important; overflow: visible !important;
+  text-overflow: clip !important; }
+
+/* ---- answers and reference ---- */
+[class*="st-key-card"] [data-testid="stExpander"] details { border-radius: 10px; }
+[class*="st-key-card"] [data-testid="stCode"] pre { border-radius: 10px; }
+.pp-table-name { font-family: var(--pp-mono); font-weight: 600; color: var(--pp-text); }
+.pp-limit { padding: 12px 0; border-top: 1px solid var(--pp-border); }
+.pp-limit:first-child { border-top: 0; padding-top: 4px; }
+.pp-limit h4 { margin: 0 0 2px; font-size: .95rem; font-weight: 600; color: var(--pp-text); padding: 0; }
+.pp-limit h4::first-letter { text-transform: uppercase; }
+.pp-limit code, .pp-scope code { font: .82em var(--pp-mono); background: var(--pp-surface-2);
+  padding: 1px 5px; border-radius: 5px; }
+.pp-limit p { margin: 4px 0 0; font-size: .9rem; color: var(--pp-text-2); line-height: 1.5; }
+.pp-limit .pp-applies { color: var(--pp-muted); font-size: .8rem; margin: 0; }
+.pp-limit .pp-todo { color: var(--pp-text); }
+.pp-limit .pp-todo::before { content: "→ "; color: var(--pp-accent); font-weight: 700; }
+
+/* About the data: what you can ask about, at a glance. Three across on a laptop, one on a
+   phone; every tile the same shape so the sizes line up down the right edge. */
+.pp-subjects { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px; margin: 8px 0 14px; }
+.pp-subject { border: 1px solid var(--pp-border); border-radius: 10px; padding: 10px 12px;
+  background: var(--pp-surface); }
+.pp-subject-head { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; margin: 0; }
+.pp-subject-head b { color: var(--pp-text); font-weight: 600; font-size: .95rem; }
+.pp-subject-head span { font-family: var(--pp-mono); font-size: .8rem; color: var(--pp-muted);
+  font-variant-numeric: tabular-nums; }
+.pp-subject p:last-child { margin: 4px 0 0; font-size: .85rem; line-height: 1.45;
+  color: var(--pp-text-2); }
+.pp-know { margin: 2px 0 0; padding-left: 1.1rem; color: var(--pp-text-2); font-size: .9rem;
+  line-height: 1.5; }
+.pp-know li { margin: 0 0 6px; }
+.pp-know b { color: var(--pp-text); font-weight: 600; }
+.pp-tables { display: grid; gap: 0; }
+.pp-trow { display: grid; grid-template-columns: 11rem 4rem minmax(0, 1fr); gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--pp-border); font-size: .85rem;
+  color: var(--pp-text-2); line-height: 1.45; }
+.pp-trow:first-child { border-top: 0; }
+.pp-trow code { font: .82rem var(--pp-mono); color: var(--pp-text); font-weight: 600;
+  overflow-wrap: anywhere; }
+.pp-trow .pp-trows { font-family: var(--pp-mono); color: var(--pp-muted); text-align: right;
+  font-variant-numeric: tabular-nums; }
+.pp-trow span code { font-weight: 400; background: var(--pp-surface-2); padding: 1px 4px;
+  border-radius: 4px; }
+
+@media (max-width: 640px) {
+  .pp-trow { grid-template-columns: minmax(0, 1fr) auto; }
+  .pp-trow > span:last-child { grid-column: 1 / -1; }
+  [class*="st-key-card"] { padding: 16px; }
+  .pp-wordmark { font-size: 1.5rem; }
+  .pp-question { font-size: 1.15rem; }
+}
+</style>
+"""
+
+# THE BRAND MARK IS CSS, NOT MARKUP. st.html sanitises its input and drops <svg> entirely,
+# so an inline mark rendered as nothing. A data-URI background survives because the
+# sanitiser never sees the stylesheet's contents. (A sun behind a cloud on PromptPace's blue square.)
+
+
+# The question box's behaviour, which CSS cannot give it. Streamlit's height="content" only
+# resizes on a rerun, and a form does not rerun while you type, so the box is grown here on
+# every input. And a text area submits on Cmd/Ctrl+Enter, where the single-line box it
+# replaced submitted on Enter -- so plain Enter is re-sent as Ctrl+Enter, which is the key
+# Streamlit's own handler submits the form on. Shift+Enter still makes a new line. Listeners
+# sit on the document, once per page, so a rerun that remounts the box needs nothing redone.
+_ASK_JS = """
+<script>
+if (!window.__ppAskBox) {
+  window.__ppAskBox = true;
+  const SEL = ".st-key-card-ask textarea";
+  const fit = t => {
+    t.rows = 1; t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px";
+  };
+  document.addEventListener("input", e => { if (e.target.matches?.(SEL)) fit(e.target); }, true);
+  window.addEventListener("resize", () => { const t = document.querySelector(SEL); if (t) fit(t); });
+  // Streamlit mounts it at three rows; size it whenever a new one appears.
+  new MutationObserver(() => {
+    const t = document.querySelector(SEL);
+    if (t && !t.dataset.ppFit) { t.dataset.ppFit = "1"; fit(t); }
+  }).observe(document.body, {childList: true, subtree: true});
+  document.addEventListener("keydown", e => {
+    const t = e.target;
+    if (!t.matches?.(SEL) || e.key !== "Enter" || e.isComposing
+        || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    t.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", code: "Enter", keyCode: 13,
+      which: 13, ctrlKey: true, bubbles: true, cancelable: true}));
+  }, true);
+}
+</script>
+"""
+
+
+def inject() -> None:
+    """The stylesheet and the ask box's script. Call once, first. Renders no element."""
+    st.html(_CSS + _ASK_JS, unsafe_allow_javascript=True)
+
+
+def reveal() -> None:
+    """Show the page, which static/first-paint.css hides until now. Call once, last.
+
+    Last rather than in the stylesheet, so the page appears once the whole script has
+    rendered: the About the data card fills in from MCP calls, and revealed any
+    earlier they resized the card under a phone visitor's eyes (2026-10-28). And only
+    once no loading placeholder (stSkeleton) is left: st.pills' code is loaded on
+    demand too, and on the live server the script finished first, so the example
+    chips appeared a moment after the reveal and pushed the page down. A browser
+    without :has() just reveals here.
+    """
+    st.html(
+        "<style>"
+        "[data-testid=\"stAppViewContainer\"]:not(:has([data-testid=\"stSkeleton\"])) > * "
+        "{ visibility: visible; animation: none; }"
+        "@supports not selector(:has(a)) {"
+        " [data-testid=\"stAppViewContainer\"] > * { visibility: visible; animation: none; } }"
+        "</style>"
+    )
+
+
+def header(tagline: str) -> None:
+    st.html(
+        '<h1 class="pp-brand">'
+        + '<span class="pp-brand-text"><span class="pp-wordmark">Ask <span>Weather</span></span>'
+        + "<small>by Dustin Cremascoli</small></span></h1>"
+        + f'<p class="pp-tagline">{html.escape(tagline)}</p>'
+    )
+
+
+def notice(text_html: str, tone: str = "info") -> None:
+    """A quiet message box. `text_html` is trusted markup -- escape anything dynamic."""
+    st.html(f'<p class="pp-notice" data-tone="{tone}">{text_html}</p>')

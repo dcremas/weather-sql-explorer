@@ -1,44 +1,38 @@
-# Streamlit theme tokens for the SQL explorer.
+# The page's look, matched to PromptPace (~/projects/typing/app/static/styles.css): the same
+# warm off-white, the same blue, the same dark palette. Streamlit picks light or dark from
+# the visitor's OS setting when both sections are present, as PromptPace's CSS does.
 #
-# WHY THIS FILE EXISTS
-# Without it Streamlit paints its own default accent (#FF4B4B, a red) over
-# buttons, links, focus rings and spinners. Every chart on this page is drawn
-# from theme.py, whose slot 1 is blue and whose slot 8 is red -- so the default
-# accent made the chrome argue with the data, and made "red" mean two different
-# things on one screen. These values are the same tokens theme.py uses, so the
-# frame and the marks come from one palette.
+# Read from the WORKING DIRECTORY's .streamlit/, which is /opt/sql-explorer on the box
+# (sql-explorer.service) and this directory under run.sh. The rest of the styling -- the
+# cards, the header, the footer -- is CSS in style.py, and uses these same values.
 #
-# LIGHT AND DARK ARE BOTH DEFINED, DELIBERATELY.
-# theme.py picks its palette from `st.context.theme.type`, which reports what
-# the viewer is actually in. Pinning colours in a bare [theme] table would fix
-# the page to one mode while the charts kept switching, so the two halves are
-# declared as [theme.light] and [theme.dark] and Streamlit resolves which one
-# applies. Keep these in sync with `_LIGHT` and `_DARK` in theme.py.
-#
-# NOT SET ON PURPOSE: chartCategoricalColors. It would make Streamlit's own
-# chart theme agree with ours, which sounds good and is a trap -- it would mask
-# the bug that constraint 1 in app.py exists to prevent, by making a chart that
-# lost `theme=None` still look roughly right.
+# Ask Football's file, value for value, since 2026-11-05 when this app took Ask
+# Football's layout. One difference, on purpose: NO chartCategoricalColors. Every chart
+# here is Plotly, drawn from theme.py with theme=None (constraint 1 in app.py), and
+# setting Streamlit's chart colours would only mask a chart that lost theme=None by
+# making it look nearly right. theme.py's surfaces equal the cards' (#fcfcfb / #1a1a19).
 
 # INTER AND THE MAIN SITE'S BLUE (2026-10-12). The font is the main
-# dustincremascoli.com site's Inter, served from ./static/fonts/ (static serving
-# below) -- the same file, SIL OFL 1.1, licence beside it. Light mode's primary
-# and links are the main site's #0b6bcb; dark links are its #61a8ff. Dark
-# primary stays #3987e5: Streamlit sets white text on primary buttons, and
-# white on #61a8ff is 2.5:1. ui.ACCENT is #0b6bcb in both modes (see ui.py).
+# dustincremascoli.com site's Inter, served from ./static/fonts/ by static serving
+# -- the same file, SIL OFL 1.1, licence beside it. Light primary and links take
+# the main site's #0b6bcb / #0956a8, dark links its #8cc0ff. Dark primary stays
+# #3987e5: Streamlit sets white text on primary buttons, and white on the main
+# site's dark #61a8ff is 2.5:1. The chart colours are unchanged.
 
 [server]
 enableStaticServing = true
 
+[client]
+toolbarMode = "minimal"           # no Deploy button or developer menu on a public page
+
 [theme]
-font = "Inter Variable, sans-serif"
-headingFont = "Inter Variable, sans-serif"
-codeFont = "monospace"
-baseFontSize = 15
-baseRadius = "0.5rem"
-buttonRadius = "0.5rem"
+font = "Inter Variable, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+codeFont = "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace"
+baseRadius = "10px"
+buttonRadius = "10px"
+baseFontSize = 16
+headingFontWeights = [700, 650, 600, 600, 600, 600]
 showWidgetBorder = true
-linkUnderline = false
 
 [[theme.fontFaces]]
 family = "Inter Variable"
@@ -48,24 +42,20 @@ style = "normal"
 
 [theme.light]
 primaryColor = "#0b6bcb"
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f2f1ec"
+backgroundColor = "#f6f5f2"
+secondaryBackgroundColor = "#f0efec"
 textColor = "#0b0b0b"
-linkColor = "#0b6bcb"
-borderColor = "#e2e1dc"
-dataframeBorderColor = "#e2e1dc"
-dataframeHeaderBackgroundColor = "#f2f1ec"
-codeBackgroundColor = "#f4f3ee"
-codeTextColor = "#1c3f6e"
+borderColor = "#e2e0da"
+linkColor = "#0956a8"
+codeBackgroundColor = "#f0efec"
+dataframeHeaderBackgroundColor = "#f0efec"
 
 [theme.dark]
 primaryColor = "#3987e5"
-backgroundColor = "#1a1a19"
-secondaryBackgroundColor = "#242423"
+backgroundColor = "#121211"
+secondaryBackgroundColor = "#232321"
 textColor = "#ffffff"
-linkColor = "#61a8ff"
-borderColor = "#33332f"
-dataframeBorderColor = "#33332f"
-dataframeHeaderBackgroundColor = "#242423"
-codeBackgroundColor = "#212120"
-codeTextColor = "#9dc4f2"
+borderColor = "#2e2e2b"
+linkColor = "#8cc0ff"
+codeBackgroundColor = "#1a1a19"
+dataframeHeaderBackgroundColor = "#232321"

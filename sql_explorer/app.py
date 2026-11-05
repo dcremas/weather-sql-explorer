@@ -3,8 +3,19 @@
     ./run.sh                      # local, needs the SSH tunnel + the MCP server
     streamlit run app.py          # if you have already sorted the environment
 
-SIX CONSTRAINTS THAT BREAK THIS APP IF REMOVED
-----------------------------------------------
+THE LAYOUT IS ASK FOOTBALL'S (2026-11-05)
+-----------------------------------------
+One 960px column of cards: the header, the Ask card with a live scope line and the
+budget, example chips, one card per answer, then "About the data" and the estate
+footer. Ask Football (~/projects/pbp/explorer/app.py) got there first, and the two
+apps are the same idea pointed at two warehouses, so they now read as one. style.py
+and estate.py are copies of Ask Football's; this file follows its app.py section by
+section. Until 2026-11-05 this page had a sidebar, a hero, a four-step strip and
+three tabs (Ask / How it works / The data model); that explanation now lives,
+shorter, in the About the data card.
+
+FOUR CONSTRAINTS THAT BREAK THIS APP IF REMOVED
+-----------------------------------------------
 1. `st.plotly_chart(..., theme=None)` on EVERY chart. The default
    `theme="streamlit"` silently repaints figures in Streamlit's own palette and
    discards every colour decision in theme.py -- including the CVD validation
@@ -14,9 +25,8 @@ SIX CONSTRAINTS THAT BREAK THIS APP IF REMOVED
    wrong immediately instead of looking nearly right.
 
 2. The agent is built inside `@st.cache_resource`. Streamlit re-runs this whole
-   script on every interaction; without the cache each keystroke-completed
-   question would rebuild the MCP client, re-discover tools over HTTP, and
-   abandon the previous connection.
+   script on every interaction; without the cache each question would rebuild the
+   MCP client, re-discover tools over HTTP, and abandon the previous connection.
 
 3. `budget.check_can_spend` runs BEFORE the model is called, and `budget.record`
    runs even when the call fails. This endpoint is public and every question
@@ -25,26 +35,7 @@ SIX CONSTRAINTS THAT BREAK THIS APP IF REMOVED
 
 4. The result table is always rendered, never behind a collapsed expander. It is
    the accessibility relief for the light palette's sub-3:1 contrast slots (see
-   theme.py) as well as the honest view of what the query returned. Tabs are
-   fine -- the chart and its table are always in the same one -- but a chart with
-   its table folded away is not.
-
-5. `st.chat_input` is called INSIDE the Ask tab, not from the main body. This
-   looks backwards -- the main body is what pins the box to the bottom of the
-   window, which is nicer -- and it is deliberate. Calling it from the main body
-   makes Streamlit wrap the whole main area in `stAppScrollToBottomContainer`
-   and scroll it to the bottom on every rerun. The masthead and the four-step
-   strip then sit above the viewport from the first paint, painted over by the
-   56px `stHeader` overlay: the page title is legibly half-erased, and the one
-   explanation every visitor is supposed to see is scrolled off. That is the
-   whole redesign undone for the sake of a pinned input, so the pin was the
-   thing that went. Verified by measurement, not by eye -- see the note on top
-   padding in ui.py.
-
-6. History is PREPENDED, so the newest answer is first. That follows from 5: the
-   question box now sits at the top of the Ask tab, so the answer belongs
-   directly beneath it, where the visitor is already looking. If the input ever
-   moves back to the bottom of the page, this has to flip with it.
+   theme.py) as well as the honest view of what the query returned.
 
 WHAT IS ON THE PAGE AND WHY
 ---------------------------
@@ -52,87 +43,32 @@ The generated SQL is displayed as a first-class part of the answer, not hidden i
 a debug panel. The point of the app is that the question became a query; a
 visitor who cannot see the query has to take the number on faith, and a wrong
 answer is indistinguishable from a right one.
-
-THE PAGE IS BUILT FOR SOMEONE WHO HAS NOT MET TEXT-TO-SQL
----------------------------------------------------------
-Most visitors arrive from a portfolio link and have never seen a language model
-write SQL. They get the idea in three widening steps, and can stop at any of
-them:
-
-  the hero paragraph      one sentence: English in, SQL and rows out
-  the four-step strip     the whole pipeline, unfolded, above the question box
-  the "How it works" tab  what text-to-SQL is, how it fails, how to check it
-
-Only the third is behind a click, and nothing on the first two is collapsible.
-An explanation a newcomer has to go looking for is an explanation they will not
-read, so the concept lives on the landing view and the detail lives in the tab.
-
-`guide.py` holds the long explanation, `data_model.py` the schema reference, and
-`ui.py` the stylesheet and the diagram primitives. This file is now layout and
-the ask/answer loop, and should stay that size.
 """
 
 from __future__ import annotations
 
+import html
+import re
+import time
+from datetime import datetime
+
+import pandas as pd
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
 import agent as agent_module
 import budget
 import charts
-import data_model
-import guide
-import llm
-import ui
+import estate
+import style
 
 st.set_page_config(
     page_title="Ask Weather — Dustin Cremascoli",
     page_icon="🌤️",
     layout="wide",
 )
+style.inject()
 
-# This is a public demo linked from a portfolio, so it has to answer two
-# questions a visitor will have within seconds of arriving: where is the code,
-# and who made it. Both live in the sidebar rather than the masthead -- the
-# question box should stay the loudest thing on the page.
 REPO_URL = "https://github.com/dcremas/weather-sql-explorer"
-SITE_URL = "https://www.dustincremascoli.com/"
-
-# The masthead facts. Deliberately approximate and hardcoded: they render on
-# every page load, and making the landing view wait on -- or fail with -- a
-# 9-million-row count would be a bad trade for two significant figures. The
-# exact, live numbers are on the Data model tab, which is where a visitor goes
-# when they want precision.
-HERO_CHIPS = [
-    ("9.2M", "hourly observations"),
-    ("112", "US weather stations"),
-    ("2019 → today", "plus 2 weeks of forecast"),
-    ("read-only", "no query can change anything"),
-]
-
-# The concept, unfolded, above the question box. See constraint-adjacent note in
-# the module docstring: this is the one explanation every visitor sees.
-STEPS = [
-    (
-        "You ask in English",
-        "No SQL required. Name a place, a measure and a time range.",
-    ),
-    (
-        "A model writes the query",
-        (
-            f"{agent_module.MODEL_FAMILY} reads the table descriptions, then writes "
-            "one PostgreSQL SELECT."
-        ),
-    ),
-    (
-        "The database runs it",
-        "Checked, then executed read-only against 9.2M rows. 30-second ceiling.",
-    ),
-    (
-        "You see the query too",
-        "Answer, chart, rows — and the SQL, so you can check the work.",
-    ),
-]
 
 EXAMPLES = [
     "Which 5 stations are forecast furthest above their own August average temperature?",
@@ -143,349 +79,424 @@ EXAMPLES = [
     "Which stations show the sharpest 24-hour pressure drops?",
 ]
 
+# The About the data card's "Good to know": the few caveats that change how an
+# answer should be read, in plain words, for a visitor rather than the model. The
+# model's own version is the table and column comments it reads through
+# describe_table, which stay under "For SQL readers".
+GOOD_TO_KNOW = [
+    "<b>The newest observations are usually a day or more behind.</b> NOAA publishes "
+    "them in batches, so “the last 30 days of data” ends at the latest batch, not today.",
+    "<b>The current year and month are still filling in.</b> Trends compare complete "
+    "years; a partial one is labelled as such.",
+    "<b>Times are local standard time at each station,</b> all year round, so summer "
+    "hours read an hour earlier than the clock on the wall.",
+    "<b>Units:</b> temperature and dew point in °F, wind in mph, pressure in inHg, "
+    "rain in inches, visibility in miles.",
+    "<b>Rainfall is the weakest measure.</b> A gauge outage is stored as no rain, so a "
+    "few station-years read drier than they were.",
+    "<b>112 stations, mostly airports.</b> A city's weather here is its airport "
+    "station's, and a place without a station cannot be asked about.",
+    "<b>The forecast is a rolling window</b> from Apple WeatherKit, about the next two "
+    "weeks plus the days just gone. Each hour holds its latest forecast, not the "
+    "earlier ones.",
+    "<b>Not in the data:</b> snowfall, storms and warnings, or official climate "
+    "normals.",
+]
 
-@st.cache_resource(show_spinner="Connecting to the MCP server…")
+
+@st.cache_resource(show_spinner=False)
 def get_agent():
     """Build the agent once per process. See constraint 2 in the module docstring."""
     return agent_module.build_agent()
 
 
 # --------------------------------------------------------------------------- #
-# Rendering one answer
+# Reads that need no model -- free, cached, and still working when the model is not
 # --------------------------------------------------------------------------- #
 
 
-def render_query(index: int, query: dict, key: str) -> None:
-    """Show one executed statement: the SQL, then a chart, then the table.
+@st.cache_data(ttl=300, show_spinner=False)
+def _schema() -> list[dict]:
+    """The readable tables, straight from the server."""
+    payload = agent_module.call_tool("list_schema")
+    return payload.get("tables", []) if isinstance(payload, dict) else []
 
-    `key` must be unique across the whole page AND stable across reruns.
-    Streamlit derives an element id from the element type plus its arguments, so
-    two charts built from similar frames collide and the page dies with
-    StreamlitDuplicateElementId -- which is what happened the first time a second
-    answer was added to the history. It is not a hypothetical: two questions about
-    the same table produce near-identical figures.
 
-    Stability matters as much as uniqueness. The key is built from the exchange's
-    own id, not its position in the list: history is prepended, so every previous
-    answer's position shifts when a new one arrives, and position-based keys would
-    re-key every chart on the page on every question.
+@st.cache_data(ttl=3600, show_spinner=False)
+def _coverage() -> dict | None:
+    """Observations, stations and the newest one -- the numbers the scope line states.
+
+    Read live because a hand-typed count goes stale: the old masthead said 9.2M
+    for months after it passed 9.4M. None when the server is down, and the page
+    then states the scope in words only. An hour's cache, not Ask Football's ten
+    minutes: the count takes about two seconds, and new observations land every
+    one to four days.
     """
-    label = f"Query {index}" if index else "The SQL that answered it"
+    try:
+        payload = agent_module.call_tool("data_coverage")
+    except Exception:  # noqa: BLE001 - the scope line is decoration, not the page
+        return None
+    if not isinstance(payload, dict) or "observations" not in payload:
+        return None
+    return payload["observations"]
 
+
+def _scope_html() -> str:
+    bits = ["<b>Weather warehouse</b>", "Hourly observations from US weather stations"]
+    cov = _coverage()
+    if cov:
+        bits = [
+            "<b>Weather warehouse</b>",
+            f"{cov.get('station_count', 112)} US stations",
+            f"{(cov.get('row_count') or 0) / 1e6:.2f}M hourly observations",
+        ]
+        if cov.get("latest"):
+            day = datetime.fromisoformat(cov["latest"])
+            bits.append(f"2019 through {day:%b} {day.day}, {day.year}")
+    bits.append("plus a two-week forecast")
+    return f'<p class="pp-scope">{" · ".join(bits)}</p>'
+
+
+# --------------------------------------------------------------------------- #
+# Session state
+# --------------------------------------------------------------------------- #
+
+st.session_state.setdefault("questions", 0)
+st.session_state.setdefault("history", [])
+st.session_state.setdefault("pending", None)
+# Monotonic, never reused, so a widget key never refers to two different answers.
+st.session_state.setdefault("next_id", 1)
+
+
+def _pick_example() -> None:
+    """A chip click asks its question. The chip is then cleared so it can be asked again."""
+    chosen = st.session_state.get("examples")
+    if chosen:
+        st.session_state.pending = chosen
+    st.session_state["examples"] = None
+
+
+status = budget.status()
+left_q = max(0, budget.MAX_QUESTIONS_PER_SESSION - st.session_state.questions)
+remaining_pct = status["remaining"] / max(status["tokens_limit"], 1) * 100
+paused = agent_module.model_status()
+can_ask = status.get("healthy") and status["remaining"] > 0 and left_q > 0 and not paused
+
+_UNAVAILABLE = {
+    "billing": (
+        "<b>Answers are paused.</b> The language model behind this page is out of "
+        "credit. The data notes below still work, and the warehouse itself is "
+        "unaffected."
+    ),
+    "rate": (
+        "<b>The language model is busy.</b> It refused the last request as too many "
+        "at once. Try again in a minute."
+    ),
+}
+
+
+# --------------------------------------------------------------------------- #
+# Header and the ask card
+# --------------------------------------------------------------------------- #
+
+style.header(
+    "Ask about the weather at 112 US stations since 2019, or the next two weeks' "
+    "forecast. A language model writes the SQL, runs it read-only, and shows you the "
+    "query."
+)
+
+with st.container(key="card-ask"):
+    st.html('<p class="pp-eyebrow">Ask a question</p>')
+    st.html(_scope_html())
+
+    with st.form("ask", border=False, clear_on_submit=False):
+        question = st.text_area(
+            "Your question",
+            max_chars=400,
+            label_visibility="collapsed",
+            height="content",
+            placeholder="Ask about temperature, wind, pressure, rain or the forecast…",
+        )
+        with st.container(horizontal=True, vertical_alignment="center"):
+            if paused:
+                st.html(
+                    '<span class="pp-status" data-state="paused">Answers paused</span>',
+                    width="content",
+                )
+            elif not status.get("healthy"):
+                st.html(
+                    '<span class="pp-status" data-state="paused">Usage ledger '
+                    "unreadable — questions paused</span>",
+                    width="content",
+                )
+            else:
+                st.html(
+                    f'<span class="pp-status"><b>{left_q}</b> questions left · '
+                    f"<b>{remaining_pct:.0f}%</b> of today's model budget</span>",
+                    width="content",
+                )
+            st.space("stretch")
+            submitted = st.form_submit_button("Ask", type="primary", disabled=not can_ask)
+
+if submitted and question and question.strip():
+    st.session_state.pending = question.strip()
+
+st.html('<p class="pp-label">Try one of these</p>')
+st.pills(
+    "Try one of these",
+    EXAMPLES,
+    key="examples",
+    disabled=not can_ask,
+    on_change=_pick_example,
+    label_visibility="collapsed",
+)
+
+
+# --------------------------------------------------------------------------- #
+# Asking
+# --------------------------------------------------------------------------- #
+
+
+def explain_failure(exc: Exception) -> str:
+    """What to tell the visitor about one failed question, as trusted markup.
+
+    A visitor who has never met text-to-SQL cannot act on "Recursion limit of 28
+    reached without hitting a stop condition", and that message also puts a
+    LangChain docs link on a public page. The raw text is offered separately,
+    folded away, because it is the thing an operator needs.
+    """
+    lowered = str(exc).lower()
+    if "recursion limit" in lowered or "graph_recursion_limit" in lowered:
+        return (
+            f"<b>The model used up all {budget.MAX_AGENT_STEPS} steps</b> this demo "
+            "allows for one question without arriving at an answer — usually a sign "
+            "it kept rewriting a query it could not get right. Asking for something "
+            "narrower often works: one station instead of all 112, or a named month "
+            "instead of a full history."
+        )
+    if "timeout" in lowered or isinstance(exc, TimeoutError):
+        return (
+            "<b>That question ran past the time limit.</b> Queries are capped at 30 "
+            "seconds each and a whole question at three minutes, so a narrower time "
+            "range or an aggregate instead of raw rows should get through."
+        )
+    # The turn was still charged; see agent.ask. Saying so keeps the counter honest
+    # rather than looking like a free failure.
+    return (
+        "<b>That question could not be answered.</b> Try rephrasing it, or narrowing "
+        "the time range. It was still counted against the daily budget, because it "
+        "still spent tokens."
+    )
+
+
+if paused:
+    style.notice(_UNAVAILABLE[paused], "warn")
+elif not status.get("healthy"):
+    style.notice(
+        "<b>Questions are paused.</b> The usage ledger is unreadable, and the page "
+        "fails closed on purpose rather than spend without counting. "
+        f"({html.escape(str(status.get('error', 'unknown')))})",
+        "error",
+    )
+
+pending = st.session_state.pending
+st.session_state.pending = None
+if pending:
+    try:
+        with st.spinner("Asking the weather warehouse… this usually takes 10–40 seconds"):
+            t0 = time.time()
+            active_agent, _ = get_agent()
+            result = agent_module.ask(
+                active_agent,
+                pending,
+                st.session_state.questions,
+                history=st.session_state.history,
+            )
+        result.update(
+            elapsed=time.time() - t0, question=pending, id=st.session_state.next_id
+        )
+        st.session_state.next_id += 1
+        st.session_state.questions += 1
+        st.session_state.history.insert(0, result)
+        # The status line is rendered ABOVE this block, so without a rerun it shows
+        # the state from before the question that just ran -- a counter that reads
+        # 12 after you have asked one. Rerunning redraws it with the ledger's numbers.
+        st.rerun()
+    except agent_module.ModelUnavailable:
+        # model_status() now reports the outage, so the rerun draws the paused status
+        # line and the notice from the top of the page. Not counted: nothing was bought.
+        st.rerun()
+    except budget.BudgetExceeded as exc:
+        # Not charged and not counted: check_can_spend refused before the model ran.
+        style.notice(html.escape(str(exc)), "warn")
+    except agent_module.SetupError as exc:
+        style.notice(
+            "<b>The warehouse is unreachable right now.</b> Please try again shortly.",
+            "error",
+        )
+        with st.expander("Details for the operator"):
+            st.code(str(exc), language=None)
+    except Exception as exc:  # noqa: BLE001 - the page must survive a bad question
+        st.session_state.questions += 1
+        style.notice(explain_failure(exc), "error")
+        with st.expander("Details"):
+            st.code(f"{type(exc).__name__}: {exc}", language=None)
+
+
+# --------------------------------------------------------------------------- #
+# Answers
+# --------------------------------------------------------------------------- #
+
+
+def _md(text: str) -> str:
+    # A bare `$` opens LaTeX in st.markdown, so "$5 ... $10" renders as math.
+    return text.replace("$", r"\$")
+
+
+# Integers that are labels, not quantities: "2,019" is not a year.
+_PLAIN_INT = ("year", "month", "day", "hour", "week", "quarter", "decade", "doy")
+
+
+def _column_config(df: pd.DataFrame) -> dict:
+    """Readable headers and number formats for a result table.
+
+    The table is the evidence under every answer, so it should read like one:
+    "Avg temp (°F)" over 75.2, not avg_temp_f; 8,712 hours, not 8712; years
+    without a thousands separator; pressure to two decimals, because 29.92 and
+    30.0 inHg are different weather. The data itself is untouched -- sorting and
+    the CSV download still see the raw values.
+    """
+    if df.columns.duplicated().any():
+        return {}
+    cfg = {}
+    for col in df.columns:
+        name, s = str(col).lower(), df[col]
+        title = charts.label(col)
+        if not pd.api.types.is_numeric_dtype(s) or pd.api.types.is_bool_dtype(s):
+            cfg[col] = st.column_config.Column(title)
+            continue
+        values = s.dropna()
+        whole = values.empty or bool((values == values.round()).all())
+        if name in _PLAIN_INT or name.endswith(("_id", "_year")):
+            fmt = "%d"
+        elif name.endswith("_pct") or name == "pct":
+            fmt = "%.1f%%"
+        elif name.endswith(("_inhg", "_in")):
+            fmt = "%.2f"
+        elif whole:
+            fmt = "localized"
+        elif bool(((values * 10).round(6) % 1 == 0).all()):
+            # Already one decimal, as the prompt asks: "0.5", not Ask Football's "0.50".
+            fmt = "%.1f"
+        else:
+            fmt = "%.2f" if values.abs().max() < 10 else "%.1f"
+        cfg[col] = st.column_config.NumberColumn(title, format=fmt)
+    return cfg
+
+
+def _result(query: dict, primary: bool, key: str) -> None:
+    """One run_sql call: its chart, its SQL, then its rows or the reason it has none.
+
+    `key` must be unique across the page AND stable across reruns: two answers
+    about the same table produce near-identical figures, and Streamlit dies with
+    StreamlitDuplicateElementId when two charts share an id. It is built from the
+    answer's own id, not its position, because history is prepended.
+    """
     if query.get("error"):
-        st.markdown(f"**{label}** — refused")
-        if query.get("requested_sql"):
-            st.code(query["requested_sql"], language="sql")
-        # A rejection is the guard working, not a crash. Shown as a warning so it
-        # reads as "the query was not allowed", not "the site is broken".
-        st.warning(query["error"])
+        st.html('<p class="pp-label">SQL</p>')
+        st.code(query.get("requested_sql") or "", language="sql", wrap_lines=True)
+        # Shown rather than hidden: a refused query is the guard working, and
+        # watching it refuse is more informative than a generic failure.
+        style.notice("<b>Refused or failed:</b> " + html.escape(str(query["error"])), "warn")
         return
 
-    st.markdown(f"**{label}**")
-    st.code(query.get("sql") or query.get("requested_sql", ""), language="sql")
+    columns = query.get("columns") or []
+    rows = query.get("rows") or []
+    frame = charts.build_frame(columns, rows) if columns else None
+
+    if primary and frame is not None:
+        chart_plan = charts.plan(frame)
+        if chart_plan["chartable"]:
+            # theme=None is load-bearing -- see constraint 1.
+            st.plotly_chart(
+                charts.figure(frame, chart_plan),
+                width="stretch",
+                theme=None,
+                key=f"{key}-chart",
+            )
+            if chart_plan["dropped"]:
+                st.html(
+                    '<p class="pp-scope">Not charted: '
+                    + ", ".join(html.escape(charts.label(c)) for c in chart_plan["dropped"])
+                    + " — a different unit or scale from the first measure, so not drawn "
+                    "on its axis. The values are in the table.</p>"
+                )
+
+    st.html('<p class="pp-label">SQL</p>')
+    st.code(
+        query.get("sql") or query.get("requested_sql") or "",
+        language="sql",
+        wrap_lines=True,
+    )
 
     if query.get("plan"):
         with st.expander("Query plan (validated, not executed)"):
             st.code("\n".join(query["plan"]), language="text")
         return
-
-    columns = query.get("columns") or []
-    rows = query.get("rows") or []
-    if not columns:
-        st.caption("No result set returned.")
+    if frame is None:
+        style.notice("No result set returned.")
         return
 
-    frame = charts.build_frame(columns, rows)
-    chart_plan = charts.plan(frame)
-
-    if chart_plan["chartable"]:
-        figure = charts.figure(frame, chart_plan)
-        # theme=None is load-bearing — see constraint 1.
-        st.plotly_chart(figure, width="stretch", theme=None, key=f"{key}-chart")
-        if chart_plan["dropped"]:
-            st.caption(
-                "Not charted: "
-                + ", ".join(f"`{c}`" for c in chart_plan["dropped"])
-                + " — too different in magnitude to share one axis honestly. "
-                "The values are in the table."
-            )
-    elif chart_plan.get("reason"):
-        st.caption(chart_plan["reason"])
-
-    # Always visible — see constraint 4.
-    st.dataframe(frame, width="stretch", hide_index=True, key=f"{key}-table")
-
-    meta = [f"{query.get('row_count', len(rows)):,} rows"]
+    count = query.get("row_count", len(rows))
+    bits = [f"{count:,} row" + ("" if count == 1 else "s")]
     if query.get("tables"):
-        meta.append("from " + ", ".join(f"`{t}`" for t in query["tables"]))
-    st.caption(" · ".join(meta))
-
-    if query.get("truncated"):
-        st.info(
-            f"Showing the first {query.get('row_limit')} rows — the query matched "
-            "more. This is a partial answer; ask for an aggregate or a top-N for "
-            "a complete one."
+        bits.append("read " + ", ".join(query["tables"]))
+    st.html(f'<p class="pp-label">Result · {html.escape(" · ".join(bits))}</p>')
+    if query.get("truncated") and query.get("limit_source") != "caller":
+        style.notice(
+            f"<b>Showing the first {query.get('row_limit')} rows</b> — the query matched "
+            "more, so this is a partial answer. Ask for an aggregate or a top-N for a "
+            "complete one.",
+            "warn",
         )
-
-
-def render_exchange(exchange: dict) -> None:
-    """One question and everything that came back for it."""
-    st.markdown(f"#### {exchange['question']}")
-    exchange_id = exchange.get("id", 0)
-
-    if exchange.get("failed"):
-        st.error(exchange["answer"])
-        if exchange.get("detail"):
-            with st.expander("What the server actually reported"):
-                st.code(exchange["detail"], language="text")
-    else:
-        st.markdown(exchange["answer"])
-
-    queries = exchange.get("queries") or []
-    if queries:
-        st.write("")
-        for position, query in enumerate(queries, start=1):
-            render_query(
-                position if len(queries) > 1 else 0,
-                query,
-                key=f"q{exchange_id}-{position}",
-            )
-
-    footer = []
-    if exchange.get("tokens"):
-        estimated = "" if exchange.get("tokens_measured", True) else " (estimated)"
-        footer.append(f"{exchange['tokens']:,} tokens{estimated}")
-    if exchange.get("steps"):
-        footer.append(f"{exchange['steps']} agent steps")
-    if footer:
-        st.caption(" · ".join(footer))
-
-
-# --------------------------------------------------------------------------- #
-# Page furniture
-# --------------------------------------------------------------------------- #
-
-
-def render_sidebar() -> DeltaGenerator:
-    """Standing context: what this is, what it costs, and where the code is.
-
-    The sidebar carries the things a visitor needs available but not in the way:
-    a one-paragraph orientation, the remaining budget, and the two links. None of
-    it competes with the question box, and none of it is the only place any of
-    this information appears.
-
-    Drawn FIRST, before the masthead, and the session count is left as a slot for
-    `render_session` to fill after the tabs (see main). Drawn last, as it used to
-    be, the sidebar arrived after everything else and pushed the whole page 300px
-    to the right on desktop: a layout shift of 0.6 on every visit (2026-10-28).
-    """
-    with st.sidebar:
-        st.markdown("### 🌤️ Ask Weather")
-        st.markdown(
-            "A question typed in English becomes a **PostgreSQL** query, runs "
-            "against a weather warehouse, and comes back with the query "
-            "attached."
-        )
-        st.markdown(
-            "**New to this?** The *How it works* tab explains what the model is "
-            "doing, and where it can go wrong. The *Data model* tab shows every "
-            "table you can ask about — both are free to read."
-        )
-
-        st.divider()
-        st.markdown("**Under the hood**")
-        st.markdown(
-            f"""
-- Writes the SQL — `{agent_module.MODEL}`
-- Runs the SQL — a `SELECT`-only Postgres role
-- Between them — an MCP server offering exactly three tools
-- The web app itself holds **no database password**
-"""
-        )
-
-        st.divider()
-        session = st.container()
-
-        st.divider()
-        # Explicit anchors, not markdown links: Streamlit would open those in a
-        # new tab too, but with no cue. This app is stateful, so links out DO open
-        # new tabs, and each says so (ui.NEW_TAB_CUE). The main site is the
-        # estate's own, so it keeps the Referer (rel="noopener" alone); GitHub is
-        # third-party.
-        st.markdown(
-            f'<a href="{REPO_URL}" target="_blank" rel="noopener noreferrer">'
-            f"Source on GitHub{ui.NEW_TAB_CUE}</a> · "
-            f'<a href="{SITE_URL}" target="_blank" rel="noopener">'
-            f"dustincremascoli.com{ui.NEW_TAB_CUE}</a>",
-            unsafe_allow_html=True,
-        )
-        st.caption(
-            "The repo holds both halves: this app, and the MCP server that "
-            "executes its SQL."
-        )
-    return session
-
-
-def render_session(slot: DeltaGenerator, usage: dict) -> None:
-    """The sidebar's question count, in the slot `render_sidebar` left for it."""
-    with slot:
-        st.markdown("**This session**")
-        asked = st.session_state.questions
-        allowed = budget.MAX_QUESTIONS_PER_SESSION
-        st.progress(min(1.0, asked / allowed) if allowed else 0.0)
-        st.caption(
-            f"{max(0, allowed - asked)} of {allowed} questions left · the shared "
-            "daily budget resets at 00:00 UTC"
-        )
-        if not usage["healthy"]:
-            st.caption("⚠️ The usage ledger is unreadable, so questions are paused.")
-
-
-def render_examples(has_history: bool) -> None:
-    """The six starter questions.
-
-    Kept as buttons rather than a dropdown because the label IS the teaching:
-    six examples in view tell a newcomer the shape of question this warehouse
-    answers faster than any instruction. Once there is an answer on the page they
-    fold away -- at that point the visitor knows what to type, and the six
-    buttons are just pushing their answer down the screen.
-    """
-    if has_history:
-        with st.expander("Try another example question"):
-            _example_grid()
-        return
-
-    st.markdown("##### Not sure what to ask? Start with one of these")
-    _example_grid()
-
-
-def _example_grid() -> None:
-    # Keyed container: the stylesheet in ui.py left-aligns these labels via
-    # `.st-key-sqlx-examples`, which is a documented hook rather than an
-    # internal class name.
-    with st.container(key="sqlx-examples"):
-        columns = st.columns(3, gap="small")
-        for position, example in enumerate(EXAMPLES):
-            with columns[position % 3]:
-                if st.button(example, key=f"ex{position}", width="stretch"):
-                    st.session_state.pending = example
-
-
-# --------------------------------------------------------------------------- #
-# The ask/answer loop
-# --------------------------------------------------------------------------- #
-
-
-# Failure shapes worth translating. A visitor who has never met text-to-SQL
-# cannot act on "Recursion limit of 14 reached without hitting a stop condition.
-# You can increase the limit by setting the recursion_limit config key" -- and
-# that message also puts a LangChain docs link on a public page, which reads as
-# an unhandled crash rather than a cap doing its job. The raw text is still
-# offered, folded away, because it is the thing an operator needs.
-def explain_failure(exc: Exception) -> tuple[str, str | None]:
-    """Turn one exception into (what to tell the visitor, the raw detail)."""
-    raw = str(exc)
-    lowered = raw.lower()
-
-    # The provider refusing outright is not the question's fault, so it must not
-    # read as "try rephrasing". Billing refusals are also not charged; see ask().
-    refusal = llm.refusal(exc)
-    if refusal == "billing":
-        return (
-            (
-                "Answers are paused: the language model behind this page is out "
-                "of credit. The Data model tab still works, and the warehouse "
-                "itself is unaffected."
-            ),
-            raw,
-        )
-    if refusal == "rate":
-        return (
-            (
-                "The language model is busy and refused the request as too many "
-                "at once. Try again in a minute."
-            ),
-            raw,
-        )
-    if "recursion limit" in lowered or "graph_recursion_limit" in lowered:
-        return (
-            f"The model used up all {budget.MAX_AGENT_STEPS} steps this demo "
-            "allows for one question without arriving at an answer — usually a "
-            "sign it kept rewriting a query it could not get right.\n\nAsking "
-            "for something narrower often works: one station instead of all "
-            "112, or a named month instead of a full history.",
-            raw,
-        )
-    if "timeout" in lowered or isinstance(exc, TimeoutError):
-        return (
-            "That question ran past the time limit. Queries are capped at 30 "
-            "seconds each and a whole question at three minutes, so a narrower "
-            "time range or an aggregate instead of raw rows should get "
-            "through.",
-            raw,
-        )
-    return (
-        "That question could not be answered. Try rephrasing it, or narrowing "
-        "the time range.",
-        raw,
+    # Always visible -- see constraint 4. Every row of a ranking or a yearly trend on
+    # screen at once; 35 px is the grid's row height, and past twenty rows the table
+    # scrolls, as a long result should.
+    st.dataframe(
+        frame,
+        hide_index=True,
+        height=35 * (min(len(frame), 20) + 1) + 3,
+        column_config=_column_config(frame),
+        key=f"{key}-table",
     )
 
 
-def answer_pending() -> None:
-    """Run the one question waiting in session state, if there is one.
+# The prompt ends every answer with "Next: q1 | q2 | q3". Markdown emphasis around the
+# label is tolerated, because models add it.
+_NEXT = re.compile(r"^[ \t>*_-]*next[*_]*\s*[:：][*_]*\s*(.+?)\s*$", re.I | re.M)
 
-    Called from inside the Ask tab so the spinner appears where the answer will,
-    rather than above the masthead. Every exit path appends to history, including
-    the failures: an error the visitor cannot see is indistinguishable from the
-    app hanging.
+
+def _split_next(answer: str) -> tuple[str, list[str]]:
+    """The answer without its "Next:" line, and the follow-up questions that line offered.
+
+    An answer without one comes back unchanged with no follow-ups: they are an offer,
+    not part of the finding, so a model that skips them costs the reader nothing.
     """
-    question = st.session_state.pending
-    if not question:
-        return
-    st.session_state.pending = None
+    found = list(_NEXT.finditer(answer or ""))
+    if not found:
+        return answer, []
+    last = found[-1]
+    asks = [q.strip(" *_`\"'“”") for q in last.group(1).split("|")]
+    asks = list(dict.fromkeys(q for q in asks if 8 <= len(q) <= 160))[:3]
+    return (answer[: last.start()] + answer[last.end() :]).rstrip(), asks
 
-    try:
-        active_agent, _ = get_agent()
-    except agent_module.SetupError as exc:
-        st.error(str(exc))
-        return
-    except Exception as exc:  # noqa: BLE001
-        st.error(f"Could not start the agent: {exc}")
-        return
 
-    def remember(payload: dict) -> None:
-        # Prepended: the question box is at the top of this tab, so the newest
-        # answer belongs directly under it. See constraint 6.
-        st.session_state.history.insert(
-            0, {"id": st.session_state.next_id, "question": question, **payload}
-        )
-        st.session_state.next_id += 1
-
-    with st.spinner("Reading the schema, writing SQL, querying the warehouse…"):
-        try:
-            result = agent_module.ask(
-                active_agent,
-                question,
-                st.session_state.questions,
-                history=st.session_state.history,
-            )
-            st.session_state.questions += 1
-            remember(result)
-        except budget.BudgetExceeded as exc:
-            # Not charged and not counted: check_can_spend refused before the
-            # model ran, so nothing was spent. See constraint 3.
-            remember({"answer": str(exc), "failed": True, "queries": []})
-        except Exception as exc:  # noqa: BLE001
-            st.session_state.questions += 1
-            message, detail = explain_failure(exc)
-            remember(
-                {
-                    "answer": message,
-                    "detail": detail,
-                    "failed": True,
-                    "queries": [],
-                }
-            )
+def _pick_next(answer_id: int) -> None:
+    """A follow-up click asks it, carrying the conversation as any typed follow-up does."""
+    key = f"next-{answer_id}"
+    if st.session_state.get(key):
+        st.session_state.pending = st.session_state[key]
+    st.session_state[key] = None
 
 
 def _new_conversation() -> None:
@@ -495,120 +506,200 @@ def _new_conversation() -> None:
     st.session_state.history = []
 
 
-def render_ask() -> None:
-    """The Ask tab: the question box, the examples, then the answers.
-
-    The input is read here rather than in `main` -- see constraint 5 -- and it is
-    read BEFORE `answer_pending`, because what it returns is what that consumes.
-    """
-    typed = st.chat_input("Ask about temperature, wind, pressure, forecasts…")
-    if typed:
-        st.session_state.pending = typed
-
-    render_examples(bool(st.session_state.history))
-    answer_pending()
-
-    if not st.session_state.history:
-        st.write("")
-        ui.callout(
-            "What you will get back",
-            "An answer in a sentence or two, a chart when the shape of the "
-            "result warrants one, the full table of rows, and the "
-            "<b>PostgreSQL that produced them</b>.",
-            "The query is shown because a language model can write valid SQL "
-            "that answers the wrong question, and the number it returns looks "
-            "identical either way. Reading the query is how you tell.",
-        )
-        return
-
+if st.session_state.history:
     with st.container(horizontal=True, vertical_alignment="center"):
-        st.caption(
-            "Follow-ups can refer back: each question carries your last "
-            f"{agent_module.CONTEXT_EXCHANGES} as context.",
+        st.html(
+            '<p class="pp-scope">Follow-ups can refer back: each question carries your '
+            f"last {agent_module.CONTEXT_EXCHANGES} as context.</p>",
             width="stretch",
         )
         st.button("New conversation", on_click=_new_conversation)
 
-    for position, exchange in enumerate(st.session_state.history):
-        if position:
-            st.divider()
-        render_exchange(exchange)
+for item in st.session_state.history:
+    with st.container(key=f"card-answer-{item['id']}"):
+        charged = f"<b>{item['tokens']:,}</b> tokens"
+        if not item.get("tokens_measured", True):
+            charged += " (estimated)"
+        st.html(
+            '<div style="display:flex;justify-content:space-between;align-items:center;'
+            'gap:12px;flex-wrap:wrap">'
+            '<p class="pp-eyebrow">Question</p>'
+            f'<p class="pp-meta"><b>{item.get("elapsed", 0):.1f}s</b> · {charged}</p></div>'
+            f'<p class="pp-question">{html.escape(item["question"])}</p>'
+        )
+        body, follow_ups = _split_next(item.get("answer") or "")
+        if body and body != agent_module.NO_ANSWER:
+            st.markdown(_md(body))
+        else:
+            style.notice("The model returned no written answer. Its queries are below.")
+
+        # The answer rests on the LAST query: earlier ones are attempts that errored,
+        # were refused or were rewritten.
+        queries = item.get("queries") or []
+        if queries:
+            _result(queries[-1], primary=True, key=f"q{item['id']}-{len(queries)}")
+        if len(queries) > 1:
+            with st.expander(f"Earlier attempts ({len(queries) - 1})"):
+                for position, query in enumerate(queries[:-1], start=1):
+                    _result(query, primary=False, key=f"q{item['id']}-{position}")
+
+        if follow_ups:
+            st.html('<p class="pp-label">Ask next</p>')
+            st.pills(
+                "Ask next",
+                follow_ups,
+                key=f"next-{item['id']}",
+                disabled=not can_ask,
+                on_change=_pick_next,
+                args=(item["id"],),
+                label_visibility="collapsed",
+            )
 
 
 # --------------------------------------------------------------------------- #
-# Entry point
+# About the data -- no model involved, so it costs nothing and works when the model
+# is down
 # --------------------------------------------------------------------------- #
 
 
-def main() -> None:
-    if "history" not in st.session_state:
-        st.session_state.history = []
-    if "questions" not in st.session_state:
-        st.session_state.questions = 0
-    if "pending" not in st.session_state:
-        st.session_state.pending = None
-    if "next_id" not in st.session_state:
-        # Monotonic, never reused, so a widget key never refers to two different
-        # answers over the life of the session.
-        st.session_state.next_id = 1
+def _prose(text: str) -> str:
+    """Escape, then let `backticks` read as code."""
+    text = html.escape(text or "")
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
 
-    # Before anything else, so the page never renders without it: see render_sidebar.
-    session_slot = render_sidebar()
 
-    # No theme flag anywhere in the presentation layer. ui.py derives every
-    # colour from the theme's own text colour in the browser, so a visitor
-    # toggling Light/Dark gets correct colours immediately instead of on the next
-    # rerun -- which is what used to happen, and it rendered near-black text on a
-    # near-black background in the meantime. See the ui.py module docstring.
-    ui.inject()
+# What a visitor can ask about, one tile per subject. Each names the table whose
+# size it shows, or a fixed size where the table cannot report one (the forecast
+# tables are foreign tables, and the planner has no estimate for them).
+_SUBJECTS = (
+    ("observations", "Observations", None,
+     "Hourly temperature, dew point, wind, pressure, rain, visibility and cloud "
+     "ceiling at every station since 2019."),
+    ("hourlyforecasts", "Forecasts", "2 weeks",
+     "Apple WeatherKit's hour-by-hour forecast for the same stations, in the same "
+     "units, so it compares directly with history."),
+    ("obs_baro_impact", "Pressure changes", None,
+     "How fast sea-level pressure rose or fell over 3, 6 and 24 hours — the signal "
+     "of an incoming front."),
+    ("hf_baro_impact", "Forecast pressure", "2 weeks",
+     "The same 3, 6 and 24-hour pressure changes, over the forecast window."),
+    ("loc_subset", "Stations", "112",
+     "Each station's name, state, region and coordinates — most are airports."),
+    ("regions", "Regions", None,
+     "US states rolled up into census regions and sub-regions, for comparing "
+     "parts of the country."),
+)
+# The tables a query should start from, first.
+_TABLE_ORDER = ("observations", "hourlyforecasts", "obs_baro_impact", "loc_subset")
 
-    usage = budget.status()
 
-    ui.hero(
-        "Ask Weather",
-        "Ask a weather question in plain English. A language model turns it into "
-        "<strong>PostgreSQL</strong>, a read-only server runs it against "
-        "<strong>9.2 million hourly observations</strong>, and the query comes "
-        "back alongside the answer — so you can check the work instead of "
-        "trusting it.",
-        HERO_CHIPS,
+def _approx(n) -> str:
+    """A table size as a reader wants it. Rounded on purpose: these are the planner's
+    estimates, and an exact-looking count beside the scope line's reads as a
+    discrepancy."""
+    if not isinstance(n, int) or n < 0:
+        return ""
+    if n >= 1_000_000:
+        return f"{n / 1e6:.2f}M"
+    if n >= 10_000:
+        return f"{n / 1e3:.0f}k"
+    return f"{n:,}"
+
+
+def _first_sentence(text: str | None, limit: int = 170) -> str:
+    text = " ".join((text or "").split())
+    cut = re.search(r"(?<=[.!?])\s", text)
+    text = text[: cut.start()] if cut else text
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + "…"
+
+
+def _subjects_html(tables: list[dict]) -> str:
+    rows = {t.get("table_name"): t.get("estimated_rows") for t in tables}
+    tiles = []
+    for table, title, fixed, text in _SUBJECTS:
+        size = fixed or _approx(rows.get(table))
+        tiles.append(
+            '<div class="pp-subject"><p class="pp-subject-head">'
+            f"<b>{html.escape(title)}</b>"
+            + (f"<span>{html.escape(size)}</span>" if size else "")
+            + f"</p><p>{html.escape(text)}</p></div>"
+        )
+    return f'<div class="pp-subjects">{"".join(tiles)}</div>'
+
+
+def _tables_html(tables: list[dict]) -> str:
+    rank = {name: i for i, name in enumerate(_TABLE_ORDER)}
+    ordered = sorted(
+        tables,
+        key=lambda t: (rank.get(t.get("table_name"), 99), t.get("schema") != "public",
+                       t.get("table_name") or ""),
     )
-    ui.steps(STEPS)
+    return '<div class="pp-tables">' + "".join(
+        f'<div class="pp-trow"><code>{html.escape(t.get("schema") or "")}.'
+        f'{html.escape(t.get("table_name") or "")}</code>'
+        f'<span class="pp-trows">{_approx(t.get("estimated_rows"))}</span>'
+        f"<span>{_prose(_first_sentence(t.get('description')))}</span></div>"
+        for t in ordered
+    ) + "</div>"
 
-    if not usage["healthy"]:
-        st.error(
-            "The usage ledger is unreadable, so questions are paused. "
-            "This is a server-side problem, not something you did."
+
+# ONE CARD, NO TABS, as on Ask Football: what you can ask about at a glance; the
+# caveats in plain words; how it works; and, collapsed, the tables for the reader
+# who checks the SQL.
+with st.container(key="card-reference"):
+    st.html('<p class="pp-eyebrow">About the data</p>')
+    try:
+        tables = _schema()
+    except Exception:  # noqa: BLE001 - the card is reference, not the page
+        tables = []
+    st.html(_subjects_html(tables))
+
+    with st.expander("Good to know before you read a number"):
+        st.html(
+            '<ul class="pp-know">'
+            + "".join(f"<li>{line}</li>" for line in GOOD_TO_KNOW)
+            + "</ul>"
         )
 
-    ask_tab, how_tab, data_tab = st.tabs(
-        ["Ask a question", "How it works", "The data model"]
-    )
-    # The sidebar's question count is filled AFTER the tabs, and in a `finally` so
-    # it survives a failure in one of them. The rest of the sidebar was drawn
-    # first, above, so the page doesn't shift sideways when it appears.
-    #
-    # Streamlit places sidebar content by its container, not by where the call
-    # sits in the script, so this costs nothing visually and fixes a real bug:
-    # `st.session_state.questions` is incremented inside the Ask tab, so a count
-    # rendered before the tabs shows the number from BEFORE the question that was
-    # just answered. It read "12 of 12 questions left" on a page that was already
-    # displaying an answer.
-    try:
-        with ask_tab:
-            render_ask()
-        with how_tab:
-            guide.render()
-        with data_tab:
-            data_model.render()
-    finally:
-        render_session(session_slot, usage)
-        # Last thing on the page, and inside the `finally` for the same reason
-        # the session count is: a failure in one tab should not cost the visitor the
-        # way out of the app. render_session leaves the main body as the active
-        # container, so this lands under the tabs, not in the sidebar.
-        ui.footer()
+    with st.expander("How answers are made"):
+        st.markdown(
+            f"""
+**The chain.** Your question goes to `{agent_module.MODEL}`, which can reach data only
+by calling three MCP tools: one lists the tables, one describes a table's columns and
+units, and one runs SQL. That last one parses the query first, forces a `LIMIT`,
+refuses anything but a single read-only `SELECT`, and runs it as a database role that
+cannot write. This page holds no database password, so if it were compromised the
+warehouse would be unaffected.
+
+**Why it can still be wrong.** It writes the query; nothing checks that the query
+answers *your* question. A model can write valid SQL that answers a slightly different
+one, and the number looks the same either way. Read the SQL and the *Basis* line under
+each answer. That is what they are there for.
+"""
+        )
+
+    with st.expander("For SQL readers: the tables"):
+        if tables:
+            st.html(
+                '<p class="pp-label">Tables · straight from the database</p>'
+                + _tables_html(tables)
+            )
+        else:
+            style.notice("The table list is unavailable right now.", "warn")
 
 
-if __name__ == "__main__":
-    main()
+# The cross-site footer, last on the page -- see estate.py.
+estate.footer(
+    "Observations from NOAA's "
+    '<a href="https://www.ncei.noaa.gov/products/global-historical-climatology-network-hourly" '
+    f'target="_blank" rel="noopener noreferrer">GHCNh{estate.NEW_TAB_SR}</a>, forecasts '
+    "from Apple WeatherKit. Answers are written by a language model and can be wrong "
+    "even when the query runs; the SQL is shown under every answer so you can check it. "
+    f"Each visit gets {budget.MAX_QUESTIONS_PER_SESSION} questions, and the page shares "
+    "a daily model budget that resets at 00:00 UTC. "
+    f'<a href="{REPO_URL}" target="_blank" rel="noopener noreferrer">'
+    f"Source on GitHub{estate.NEW_TAB_SR}</a>.",
+    model=agent_module.MODEL_FAMILY,
+)
+# Last of all: shows the page, which static/first-paint.css hides until the script is done.
+style.reveal()

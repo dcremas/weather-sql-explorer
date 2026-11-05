@@ -1,4 +1,4 @@
-streamlit>=1.60
+streamlit>=1.64  # theme.light/theme.dark, horizontal containers, st.space, st.pills (Ask Football's layout)
 langchain>=1.0
 langchain-google-genai>=4.0
 # The other providers' packages. Each is imported only when SQLX_MODEL picks it (llm.py).

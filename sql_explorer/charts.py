@@ -68,6 +68,40 @@ def _is_identifier(name: str) -> bool:
     return bool(_ID_PATTERN.search(name or ""))
 
 
+# The system prompt asks for snake_case aliases with the unit as a suffix
+# (`avg_temp_f`, `max_wind_mph`, `share_pct`); these turn the suffix back into a
+# unit a reader expects, and `label` is the other half of that bargain. Ask
+# Football's charts.label, with this warehouse's units.
+_UNITS = {
+    "f": "°F", "c": "°C", "mph": "mph", "kt": "knots", "inhg": "inHg", "hpa": "hPa",
+    "mb": "mb", "in": "inches", "mi": "miles", "ft": "feet", "pct": "%",
+}
+_ACRONYMS = {"id": "ID", "us": "US", "utc": "UTC", "lax": "LAX", "nws": "NWS", "yoy": "YoY"}
+
+
+def _unit(col) -> str:
+    """The unit suffix of a column name, or '' when it carries none."""
+    words = [w for w in re.split(r"[_\s]+", str(col).strip().lower()) if w]
+    return words[-1] if len(words) > 1 and words[-1] in _UNITS else ""
+
+
+def label(col) -> str:
+    """A column name as a reader would write it: `avg_temp_f` -> "Avg temp (°F)".
+
+    Shared by the chart axes and the result table's headers, so the two name a
+    column the same way.
+    """
+    words = [w for w in re.split(r"[_\s]+", str(col).strip()) if w]
+    if not words:
+        return str(col)
+    unit = ""
+    if _unit(col):
+        unit = f" ({_UNITS[words.pop().lower()]})"
+    out = [_ACRONYMS.get(w.lower(), w.lower()) for w in words]
+    out[0] = out[0][:1].upper() + out[0][1:]
+    return " ".join(out) + unit
+
+
 # A fallback for when the name gives nothing away. The model is asked to alias
 # time buckets clearly (see agent.py's system prompt), but it does not always --
 # `EXTRACT(YEAR FROM date) AS y` is a real observed case, and `y` matches no
@@ -134,7 +168,12 @@ def _classify(frame: pd.DataFrame) -> tuple[list[str], list[str], list[str], lis
         series = frame[name]
         if pd.api.types.is_datetime64_any_dtype(series):
             temporal.append(name)
-        elif pd.api.types.is_numeric_dtype(series) and not _is_identifier(name):
+        # A unit suffix outranks the id pattern: `all_station_avg_wind_mph` -- the
+        # benchmark column the prompt asks rankings to carry -- names a station but
+        # is miles per hour, and was set aside as a label until 2026-11-05.
+        elif pd.api.types.is_numeric_dtype(series) and (
+            _unit(name) or not _is_identifier(name)
+        ):
             if _is_period(name) or _looks_like_years(series):
                 periodic.append(name)
             else:
@@ -188,11 +227,22 @@ def plan(frame: pd.DataFrame) -> dict:
 
     measures, dropped = _shared_axis_measures(frame, numeric)
 
+    # A measure with ONE value on every row is a benchmark -- the all-station
+    # figure the prompt asks a ranking to carry -- not a series. Drawn as bars it
+    # is fifteen identical bars beside the real ones; drawn as a dashed reference
+    # line it is the comparison the reader wants. Kept as a series when it is the
+    # only measure, since then there is nothing to compare it with.
+    benchmarks = [
+        m for m in measures[1:] if len(frame) >= 3 and frame[m].nunique(dropna=True) == 1
+    ]
+    measures = [m for m in measures if m not in benchmarks]
+
     return {
         "chartable": True,
         "form": form,
         "axis": axis,
         "measures": measures,
+        "benchmarks": benchmarks,
         "dropped": dropped,
         "reason": "",
     }
@@ -265,11 +315,21 @@ def _shared_axis_measures(
     if anchor == 0:
         return numeric[:1], numeric[1:]
 
+    # DIFFERENT UNITS NEVER SHARE AN AXIS, whatever their size. The magnitude rule
+    # alone let (avg_temp_f, avg_wind_mph) through -- 75 and 9 are within 10x -- and
+    # drew degrees and miles per hour as two lines on one scale, as if comparable.
+    # Ask Football hit the same thing with a percentage beside an average in yards.
+    # Read from the unit suffix the system prompt asks for; columns without one fall
+    # back to the magnitude rule alone, as before.
+    anchor_unit = _unit(numeric[0])
+
     keep, dropped = [numeric[0]], []
     for name in numeric[1:]:
         size = magnitude(name)
         ratio = max(size, anchor) / max(min(size, anchor), 1e-9)
-        if size > 0 and ratio <= COMPARABLE_MAGNITUDE_RATIO:
+        if _unit(name) != anchor_unit:
+            dropped.append(name)
+        elif size > 0 and ratio <= COMPARABLE_MAGNITUDE_RATIO:
             keep.append(name)
         else:
             dropped.append(name)
@@ -294,6 +354,25 @@ def figure(frame: pd.DataFrame, chart_plan: dict) -> go.Figure:
 
     fig = go.Figure()
 
+    def benchmarks(vertical: bool) -> None:
+        # Dashed, in the muted text colour rather than a series slot: a reference,
+        # not data, and the legend stays about the measures.
+        for name in chart_plan.get("benchmarks") or []:
+            value = float(frame[name].dropna().iloc[0])
+            line = {"dash": "dash", "width": 1.5, "color": tokens["text_muted"]}
+            note = f"{label(name)}: {value:,.1f}"
+            if vertical:
+                # The label sits above the plot, where theme.layout's 8px top
+                # margin cut it in half.
+                fig.update_layout(margin_t=30)
+                fig.add_vline(x=value, line=line, annotation_text=note,
+                              annotation_position="top", annotation_font_size=11,
+                              annotation_font_color=tokens["text_2"])
+            else:
+                fig.add_hline(y=value, line=line, annotation_text=note,
+                              annotation_position="top left", annotation_font_size=11,
+                              annotation_font_color=tokens["text_2"])
+
     if chart_plan["form"] == "line":
         data = frame.sort_values(axis)
         for index, measure in enumerate(measures):
@@ -301,10 +380,10 @@ def figure(frame: pd.DataFrame, chart_plan: dict) -> go.Figure:
                 go.Scatter(
                     x=data[axis],
                     y=data[measure],
-                    name=measure,
+                    name=label(measure),
                     mode="lines",
                     line={"width": 2, "color": palette[index]},
-                    hovertemplate=f"%{{x}}<br>{measure}: %{{y:,.2f}}<extra></extra>",
+                    hovertemplate=f"%{{x}}<br>{label(measure)}: %{{y:,.2f}}<extra></extra>",
                 )
             )
         # automargin, for the same reason the horizontal-bar path below sets it:
@@ -317,8 +396,9 @@ def figure(frame: pd.DataFrame, chart_plan: dict) -> go.Figure:
         layout["xaxis"]["automargin"] = True
         layout["yaxis"]["automargin"] = True
         fig.update_layout(**layout)
-        fig.update_xaxes(title_text=axis)
-        fig.update_yaxes(title_text=measures[0] if single else None)
+        fig.update_xaxes(title_text=label(axis))
+        fig.update_yaxes(title_text=label(measures[0]) if single else None)
+        benchmarks(vertical=False)
         return fig
 
     # Horizontal bars. Station names and airport names are long, and horizontal
@@ -344,7 +424,7 @@ def figure(frame: pd.DataFrame, chart_plan: dict) -> go.Figure:
             go.Bar(
                 y=data[axis].astype(str),
                 x=data[measure],
-                name=measure,
+                name=label(measure),
                 orientation="h",
                 marker={
                     "color": palette[index],
@@ -359,7 +439,7 @@ def figure(frame: pd.DataFrame, chart_plan: dict) -> go.Figure:
                 textposition="outside",
                 textfont={"color": tokens["text_2"], "size": 11},
                 cliponaxis=False,
-                hovertemplate=f"%{{y}}<br>{measure}: %{{x:,.2f}}<extra></extra>",
+                hovertemplate=f"%{{y}}<br>{label(measure)}: %{{x:,.2f}}<extra></extra>",
             )
         )
 
@@ -374,7 +454,8 @@ def figure(frame: pd.DataFrame, chart_plan: dict) -> go.Figure:
     layout["yaxis"]["automargin"] = True
     layout["xaxis"]["automargin"] = True
     fig.update_layout(**layout, barmode="group", bargap=0.28, bargroupgap=0.08)
-    fig.update_xaxes(title_text=measures[0] if single else None)
+    fig.update_xaxes(title_text=label(measures[0]) if single else None)
     # A single series needs no legend — the axis title names it.
     fig.update_layout(showlegend=not single)
+    benchmarks(vertical=True)
     return fig
