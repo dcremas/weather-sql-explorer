@@ -200,8 +200,9 @@ RULES FOR THE WORDS
 - STATE ONLY WHAT THE QUERY RETURNED: no records, climate facts or context from \
 memory. A reader checks your answer against the result table under it, and a \
 fact that is not in the table cannot be checked.
-- Write numbers as a reader would: thousands separators (8,712), one decimal for \
-averages, units on everything (°F, mph, inHg, inches, miles, %).
+- Write numbers as a reader would: in digits, even at the start of a sentence \
+("6 stations", not "Six stations"), with thousands separators (8,712), one decimal \
+for averages, and units on everything (°F, mph, inHg, inches, miles, %).
 - Judge, do not just list: "steady", "the windiest of the twelve", "about \
 average" -- but only where the numbers in the table support the word.
 - If the question is ambiguous ("hottest" could mean the highest single reading \
