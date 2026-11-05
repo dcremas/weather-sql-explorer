@@ -34,13 +34,13 @@ re-checked before and after.
 swaps `sqlx-http.conf` for `sqlx.conf`, and it is self-reverting: if the TLS
 vhost fails `nginx -t` the previous file is restored and nginx is never reloaded
 broken — a bad vhost takes down **all five** sites, not just this one. DNS is at
-GoDaddy (no Route53 zone, no API credentials on the Mac), so an A record change
+GoDaddy (no Route53 zone, no API credentials), so an A record change
 cannot be scripted and stays manual.
 
 ## Deploying a change
 
 ```bash
-cd ~/projects/ec2-nginx/weather-sql-explorer
+cd weather-sql-explorer
 bash sql_explorer/deploy/push.sh
 ```
 
@@ -49,7 +49,7 @@ files against the repo, stages the code, compiles it on the box, and runs
 `provision.sh`. By hand, the same thing is:
 
 ```bash
-cd ~/projects/ec2-nginx/weather-sql-explorer
+cd weather-sql-explorer
 rsync -az --delete --exclude '.venv/' --exclude '__pycache__/' --exclude '.env' \
       --exclude '.budget.json' --exclude '.git/' \
       mcp_server sql_explorer awsvm:/tmp/sqlx-deploy/
@@ -160,7 +160,7 @@ journalctl -u weather-mcp -n 50
 # The `env $(systemctl show ...)` part is REQUIRED, not decoration: the database
 # host and port live as Environment= lines in weather-mcp.service, while mcp.env
 # holds only the password. Without them db.py falls back to its development
-# default of port 15432 — the laptop's SSH tunnel — and every check fails with
+# default of port 15432 — a development SSH tunnel — and every check fails with
 # "connection refused" on a box where the database is fine.
 sudo -u weathermcp env $(systemctl show weather-mcp -p Environment --value) \
   bash -c 'set -a; . /etc/weather-mcp/mcp.env; set +a

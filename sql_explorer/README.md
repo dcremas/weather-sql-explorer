@@ -53,7 +53,7 @@ the ledger.
 
 ---
 
-## 1. Running it locally
+## 1. Running it for development
 
 Both dependencies below fail in ways that look like app bugs, so `run.sh` checks
 them first and tells you the fix rather than letting Streamlit start broken.
@@ -178,7 +178,7 @@ sudo systemctl restart sql-explorer
 - **Nothing changes until the setting does.** Each provider's package is
   imported only when chosen, so the default path is the same code it always was.
 - **`llm.py` has an identical twin** in the football explorer
-  (`~/projects/pbp/explorer/llm.py`). Keep them in step by hand.
+  (`explorer/llm.py` in the play-by-play repository). Keep them in step by hand.
 - **A Claude key is an API key from platform.claude.com.** A claude.ai Team or
   Pro plan does not include API access.
 - **What each provider is sent.** Gemini: `temperature=0`, `low` effort. Claude:
@@ -219,7 +219,7 @@ is a twin of the football explorer's; keep them in step. `provision.sh` leaves
 **Rainfall was wrong until 2026-10-12.** The synoptic (FM-12) rows carried
 overlapping multi-hour totals, so summing `prp` counted the same rain two or
 three times (Seattle 2022: 89.8 inches against 40.98 official). The fix is in
-`~/projects/WeatherData` (README, *Precipitation double counting*) and is applied
+the WeatherData repository (README, *Precipitation double counting*) and is applied
 to the serving warehouse; the three rainfall questions here were measured after
 it. A few stations are still wrong upstream -- Little Rock AFB, Shreveport 2025,
 Duluth 2025 -- and the test set avoids them.
@@ -352,7 +352,7 @@ sql_explorer/
                        `call_tool` reaches MCP with no model in the path,
                        which is how data_model.py reads the schema for free
   llm.py               SQLX_MODEL -> chat model, for every provider; twin of
-                       ~/projects/pbp/explorer/llm.py
+                       play-by-play's explorer/llm.py
   budget.py            the spend caps and the flock'd daily ledger
   charts.py            whether to chart an arbitrary result set, and how
   theme.py             the validated Plotly palette (charts only now)

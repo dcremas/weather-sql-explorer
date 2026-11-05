@@ -57,7 +57,7 @@ If you only ever ask these questions from the terminal, you do not need this.
 > the SQL Explorer web app reaches the warehouse. There the connection is local
 > and **no tunnel is involved** — provisioning, the unit, and its user separation
 > are documented in `../sql_explorer/deploy/README-deploy.md`. Everything below
-> applies to the laptop mode only.
+> applies to running it on your own machine through a tunnel.
 
 Public 5432 is closed to the internet (`../../NGINX-RUNBOOK.md` §11 has the full
 two-layer firewall; `../../AWS-INVENTORY-RUNBOOK.md` §2 notes the private IP), so
@@ -84,7 +84,7 @@ the tunnel rather than a bare "connection refused".
 ## 3. Setup
 
 ```bash
-cd ~/projects/ec2-nginx/weather-sql-explorer/mcp_server
+cd weather-sql-explorer/mcp_server
 
 # 3a. Dependencies
 python3 -m venv .venv
@@ -159,7 +159,7 @@ bare `python` will not resolve and the server will appear to fail silently.
 ```bash
 claude mcp add weather-warehouse \
   --scope user \
-  -- /Users/dustincremascoli/projects/ec2-nginx/weather-sql-explorer/mcp_server/.venv/bin/python \
+  -- /path/to/weather-sql-explorer/mcp_server/.venv/bin/python \
      -m weather_mcp.server
 ```
 
@@ -300,7 +300,7 @@ exposed to `mcp_ro` itself.
 
 **Network exposure: none added, in either mode.**
 
-- *On the Mac:* the server reaches Postgres through the existing tunnel. Nothing
+- *On your machine:* the server reaches Postgres through an SSH tunnel. Nothing
   is opened on the EC2 side.
 - *On EC2:* `weather-mcp.service` binds **`127.0.0.1:8770` only** — verified
   2026-08-25 with `ss -ltnp`. It is not proxied by nginx and must not be; the only
